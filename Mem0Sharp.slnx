@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Mem0Sharp/Mem0Sharp.csproj" />
+  <Project Path="tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj" />
+</Solution>
