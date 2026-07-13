@@ -111,7 +111,13 @@ Install the package from the repository's default branch package feed:
 dotnet add package Mem0Sharp --version 0.1.0 --source github
 ```
 
-To publish a new version, push a version tag such as `v0.1.0`. The GitHub Actions workflow builds and tests the library, then publishes the package to GitHub Packages. Package versions must be unique.
+Once published to NuGet.org, it can be installed without a custom package source:
+
+```powershell
+dotnet add package Mem0Sharp --version 0.1.0
+```
+
+To publish a new version, push a version tag such as `v0.1.0`. The GitHub Actions workflow builds and tests the library, then publishes the package to GitHub Packages and NuGet.org using trusted publishing. Package versions must be unique. The NuGet.org workflow uses GitHub's short-lived OIDC credentials and does not store a NuGet API key.
 
 ## Build and test
 
@@ -119,4 +125,3 @@ To publish a new version, push a version tag such as `v0.1.0`. The GitHub Action
 dotnet build .\src\Mem0Sharp\Mem0Sharp.csproj
 dotnet test .\tests\Mem0Sharp.Tests\Mem0Sharp.Tests.csproj
 ```
-
