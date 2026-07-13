@@ -1,5 +1,7 @@
 # Mem0Sharp
 
+[![NuGet version](https://img.shields.io/nuget/v/Mem0Sharp.svg)](https://www.nuget.org/packages/Mem0Sharp)
+
 Long-term memory for AI applications in .NET 10. Mem0Sharp is an independent C#/.NET implementation of the open-source [Mem0 project](https://github.com/mem0ai/mem0), with one service API for saving, searching, updating, and deleting semantic memories while keeping embedding and storage providers replaceable.
 
 Mem0Sharp is not affiliated with, sponsored by, or endorsed by Mem0 or mem0ai.
@@ -108,16 +110,16 @@ dotnet nuget add source `
 Install the package from the repository's default branch package feed:
 
 ```powershell
-dotnet add package Mem0Sharp --version 0.1.0 --source github
+dotnet add package Mem0Sharp --source github
 ```
 
-Once published to NuGet.org, it can be installed without a custom package source:
+The command intentionally omits `--version`, so NuGet installs the latest available package from the selected source. Once published to NuGet.org, it can be installed without a custom package source:
 
 ```powershell
-dotnet add package Mem0Sharp --version 0.1.0
+dotnet add package Mem0Sharp
 ```
 
-To publish a new version, push a version tag such as `v0.1.0`. The GitHub Actions workflow builds and tests the library, then publishes the package to GitHub Packages and NuGet.org using trusted publishing. Package versions must be unique. The NuGet.org workflow uses GitHub's short-lived OIDC credentials and does not store a NuGet API key.
+To publish a new version, push a unique version tag such as `v0.1.2`. The GitHub Actions workflow builds and tests the library, then publishes the package to GitHub Packages and NuGet.org using trusted publishing. The NuGet.org workflow uses GitHub's short-lived OIDC credentials and does not store a NuGet API key.
 
 ## Build and test
 

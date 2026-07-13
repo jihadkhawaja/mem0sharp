@@ -38,6 +38,15 @@ jobs:
       - name: Test
         run: dotnet test tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj --configuration Release --no-restore
 
+      - name: Validate release version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $GITHUB_REF_NAME. Expected vMAJOR.MINOR.PATCH or a SemVer prerelease." >&2
+            exit 1
+          fi
+
       - name: Pack
         run: dotnet pack "$PROJECT_PATH" --configuration Release --no-build --output ./artifacts/package -p:PackageVersion="${GITHUB_REF_NAME#v}"
 
