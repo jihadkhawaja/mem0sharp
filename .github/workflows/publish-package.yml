@@ -1,0 +1,43 @@
+name: Publish NuGet package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  PROJECT_PATH: src/Mem0Sharp/Mem0Sharp.csproj
+  PACKAGE_SOURCE: https://nuget.pkg.github.com/jihadkhawaja/index.json
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore Mem0Sharp.slnx
+
+      - name: Build
+        run: dotnet build "$PROJECT_PATH" --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj --configuration Release --no-restore
+
+      - name: Pack
+        run: dotnet pack "$PROJECT_PATH" --configuration Release --no-build --output ./artifacts/package -p:PackageVersion="${GITHUB_REF_NAME#v}"
+
+      - name: Publish to GitHub Packages
+        run: dotnet nuget push ./artifacts/package/*.nupkg --source "$PACKAGE_SOURCE" --api-key "${{ secrets.GITHUB_TOKEN }}" --skip-duplicate

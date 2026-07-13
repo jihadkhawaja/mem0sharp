@@ -9,10 +9,18 @@
     <PackageId>Mem0Sharp</PackageId>
     <Version>0.1.0</Version>
     <Authors>mem0sharp contributors</Authors>
-    <Description>Long-term memory for AI applications in .NET.</Description>
-    <PackageTags>ai;memory;agents;rag</PackageTags>
+    <Description>Long-term memory for AI applications in .NET with semantic search and replaceable embedding and storage providers.</Description>
+    <PackageTags>ai;memory;agents;rag;semantic-search;pgvector;postgresql</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/jihadkhawaja/mem0sharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="9.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
 </Project>

@@ -92,6 +92,27 @@ The store persists memory metadata and embeddings, applies user/agent/run/scope 
 
 The provider boundary also works with compatible local servers. See [Providers and persistence](docs/providers-and-persistence.md) for model selection, embedding dimensions, and initialization details.
 
+## Install from GitHub Packages
+
+GitHub Packages requires authentication for NuGet clients. Create a GitHub personal access token with `read:packages`, then add the package source:
+
+```powershell
+dotnet nuget add source `
+	--username YOUR_GITHUB_USERNAME `
+	--password YOUR_GITHUB_TOKEN `
+	--store-password-in-clear-text `
+	--name github `
+	https://nuget.pkg.github.com/jihadkhawaja/index.json
+```
+
+Install the package from the repository's default branch package feed:
+
+```powershell
+dotnet add package Mem0Sharp --version 0.1.0 --source github
+```
+
+To publish a new version, push a version tag such as `v0.1.0`. The GitHub Actions workflow builds and tests the library, then publishes the package to GitHub Packages. Package versions must be unique.
+
 ## Build and test
 
 ```powershell
