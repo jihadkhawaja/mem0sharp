@@ -6,6 +6,19 @@ Long-term memory for AI applications in .NET 10. Mem0Sharp is an independent C#/
 
 Mem0Sharp is not affiliated with, sponsored by, or endorsed by Mem0 or mem0ai.
 
+## Attribution and trademarks
+
+Mem0Sharp is an independent .NET implementation inspired by the open-source
+[Mem0 project](https://github.com/mem0ai/mem0). The original Mem0 project is
+copyright 2023 Taranjeet Singh and is licensed under the Apache License 2.0.
+Copyright for the Mem0Sharp implementation and its modifications is held by
+Jihad Khawaja and contributors. See [NOTICE](NOTICE) and [LICENSE](LICENSE)
+for the complete attribution and license terms.
+
+Mem0 and related names, logos, and marks belong to their respective owners.
+This project does not grant or claim any trademark rights and is not affiliated
+with, sponsored by, or endorsed by the Mem0 project or mem0ai.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md) - install, create a service, and use the core API.
