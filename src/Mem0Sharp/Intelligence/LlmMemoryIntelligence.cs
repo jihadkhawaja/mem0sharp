@@ -17,16 +17,22 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
             new Message("user", JsonSerializer.Serialize(new { existing, messages, instructions = options.Prompt }))
         ], cancellationToken);
 
-        using var document = JsonDocument.Parse(StripCodeFence(response));
+        using var document = ParseResponse(response);
+        if (document is null) return [];
         if (!document.RootElement.TryGetProperty("memory", out var items) || items.ValueKind != JsonValueKind.Array) return [];
         var decisions = new List<MemoryDecision>();
         foreach (var item in items.EnumerateArray())
         {
-            var text = item.TryGetProperty("text", out var textValue) ? textValue.GetString() ?? string.Empty : string.Empty;
-            var eventName = item.TryGetProperty("event", out var eventValue) ? eventValue.GetString() : null;
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            var text = item.TryGetProperty("text", out var textValue) && textValue.ValueKind == JsonValueKind.String
+                ? textValue.GetString() ?? string.Empty
+                : string.Empty;
+            var eventName = item.TryGetProperty("event", out var eventValue) && eventValue.ValueKind == JsonValueKind.String
+                ? eventValue.GetString()
+                : null;
             if (!Enum.TryParse<MemoryAction>(eventName, true, out var eventType)) continue;
             string? memoryId = null;
-            if (item.TryGetProperty("id", out var idValue) && int.TryParse(idValue.GetString(), out var index) && index >= 0 && index < existingMemories.Count)
+            if (item.TryGetProperty("id", out var idValue) && TryGetIndex(idValue, out var index) && index >= 0 && index < existingMemories.Count)
             {
                 memoryId = existingMemories[index].Id;
             }
@@ -36,13 +42,29 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
         return decisions;
     }
 
-    private static string StripCodeFence(string value)
+    private static bool TryGetIndex(JsonElement value, out int index)
     {
-        var trimmed = value.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal)) return trimmed;
-        var firstNewLine = trimmed.IndexOf('\n');
-        var lastFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-        return firstNewLine >= 0 && lastFence > firstNewLine ? trimmed[(firstNewLine + 1)..lastFence].Trim() : trimmed;
+        if (value.ValueKind == JsonValueKind.Number) return value.TryGetInt32(out index);
+        if (value.ValueKind == JsonValueKind.String) return int.TryParse(value.GetString(), out index);
+        index = 0;
+        return false;
+    }
+
+    private static JsonDocument? ParseResponse(string response)
+    {
+        var start = response.IndexOf('{');
+        var end = response.LastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try
+        {
+            return JsonDocument.Parse(
+                response[start..(end + 1)],
+                new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
 
