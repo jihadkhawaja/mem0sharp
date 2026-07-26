@@ -48,9 +48,374 @@ public sealed class MemoryServiceTests
 
         var updated = await service.UpdateAsync(id, "new preference");
         Assert.Equal("new preference", updated.Text);
+        Assert.NotEqual(added.Memories[0].Hash, updated.Hash);
 
         await service.DeleteAsync(id);
         Assert.Null(await service.GetAsync(id));
+    }
+
+    [Fact]
+    public async Task HistoryPersistsAcrossServiceInstances()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store);
+        var added = await service.AddAsync("old preference", "alice");
+        var id = added.Memories[0].Id;
+
+        await service.UpdateAsync(id, "new preference");
+        await service.DeleteAsync(id);
+
+        var history = await new MemoryService(store).GetHistoryAsync(id);
+
+        Assert.Collection(
+            history,
+            entry =>
+            {
+                Assert.Equal(MemoryHistoryEvent.Add, entry.Event);
+                Assert.Null(entry.OldMemory);
+                Assert.Equal("old preference", entry.NewMemory);
+            },
+            entry =>
+            {
+                Assert.Equal(MemoryHistoryEvent.Update, entry.Event);
+                Assert.Equal("old preference", entry.OldMemory);
+                Assert.Equal("new preference", entry.NewMemory);
+            },
+            entry =>
+            {
+                Assert.Equal(MemoryHistoryEvent.Delete, entry.Event);
+                Assert.Equal("new preference", entry.OldMemory);
+                Assert.Null(entry.NewMemory);
+            });
+    }
+
+    [Fact]
+    public async Task DeleteAllRecordsHistoryForEachMemory()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store);
+        var first = await service.AddAsync("first", "alice");
+        var second = await service.AddAsync("second", "alice");
+
+        Assert.Equal(2, await service.DeleteAllAsync(new MemoryFilter(UserId: "alice")));
+
+        Assert.Equal(MemoryHistoryEvent.Delete, (await service.GetHistoryAsync(first.Memories[0].Id))[^1].Event);
+        Assert.Equal(MemoryHistoryEvent.Delete, (await service.GetHistoryAsync(second.Memories[0].Id))[^1].Event);
+    }
+
+    [Fact]
+    public async Task AdvancedMetadataFiltersSupportNestedLogicAndNumericComparison()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("premium tea", new MemoryAddOptions { UserId = "alice", Metadata = new Dictionary<string, string> { ["tier"] = "premium", ["score"] = "12" } });
+        await service.AddAsync("basic coffee", new MemoryAddOptions { UserId = "alice", Metadata = new Dictionary<string, string> { ["tier"] = "basic", ["score"] = "4" } });
+
+        var filter = new MemoryFilter(
+            UserId: "alice",
+            Metadata: new FilterGroup(
+                FilterLogic.And,
+                new MetadataFilter("score", FilterOperator.GreaterThan, 10),
+                new FilterGroup(FilterLogic.Not, new MetadataFilter("tier", FilterOperator.Equal, "basic"))));
+
+        var memory = Assert.Single(await service.GetAllAsync(filter));
+        Assert.Equal("premium tea", memory.Text);
+    }
+
+    [Fact]
+    public async Task ExpiredMemoriesAreHiddenUnlessRequested()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("expired", new MemoryAddOptions { UserId = "alice", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
+        await service.AddAsync("active", new MemoryAddOptions { UserId = "alice", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1) });
+
+        Assert.Equal("active", Assert.Single(await service.GetAllAsync(new MemoryFilter(UserId: "alice"))).Text);
+        Assert.Equal(2, (await service.GetAllAsync(new MemoryFilter(UserId: "alice", IncludeExpired: true))).Count);
+        Assert.Empty(await service.SearchAsync("expired", new MemoryFilter(UserId: "alice")));
+    }
+
+    [Fact]
+    public async Task RawMessageAddBypassesExtractorAndPagingReturnsTotal()
+    {
+        var service = new MemoryService(extractor: new ThrowingExtractor());
+        await service.AddAsync([new Message("user", "first")], new MemoryAddOptions { UserId = "alice", Infer = false });
+        await service.AddAsync([new Message("user", "second")], new MemoryAddOptions { UserId = "alice", Infer = false });
+
+        var page = await service.GetPageAsync(new MemoryPageOptions { Offset = 1, Limit = 1 }, new MemoryFilter(UserId: "alice"));
+
+        Assert.Equal(2, page.Total);
+        Assert.Single(page.Results);
+    }
+
+    [Fact]
+    public async Task SearchThresholdAndExplanationAreApplied()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("dark mode", "alice");
+
+        Assert.Empty(await service.SearchAsync("dark mode", new MemorySearchOptions { Filter = new MemoryFilter(UserId: "alice"), Threshold = 1.1 }));
+        var result = Assert.Single(await service.SearchAsync("dark mode", new MemorySearchOptions { Filter = new MemoryFilter(UserId: "alice"), Threshold = 0, Explain = true }));
+        Assert.NotNull(result.ScoreDetails);
+        Assert.True(result.ScoreDetails.Semantic > 0);
+        Assert.Equal(result.ScoreDetails.Semantic + result.ScoreDetails.Keyword, result.ScoreDetails.Raw, 10);
+    }
+
+    [Fact]
+    public async Task ResetClearsMemoriesAndHistory()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store);
+        var id = (await service.AddAsync("remember me")).Memories[0].Id;
+
+        await service.ResetAsync();
+
+        Assert.Empty(await service.GetAllAsync(new MemoryFilter(IncludeExpired: true)));
+        Assert.Empty(await service.GetHistoryAsync(id));
+    }
+
+    [Fact]
+    public async Task HybridSearchIncludesKeywordScoreAndExplanation()
+    {
+        var service = new MemoryService(embeddings: new ConstantEmbeddingGenerator());
+        await service.AddAsync("project codename zephyr", "alice");
+        await service.AddAsync("unrelated preference", "alice");
+
+        var result = Assert.Single((await service.SearchAsync("zephyr", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            TopK = 1,
+            Threshold = 0,
+            Explain = true
+        })).Take(1));
+
+        Assert.Contains("zephyr", result.Memory.Text);
+        Assert.NotNull(result.ScoreDetails);
+        Assert.True(result.ScoreDetails.Keyword > 0);
+    }
+
+    [Fact]
+    public async Task ConfiguredRerankerRunsAfterHybridScoring()
+    {
+        var service = new MemoryService(embeddings: new ConstantEmbeddingGenerator(), reranker: new ReverseReranker());
+        await service.AddAsync("first", "alice");
+        await service.AddAsync("second", "alice");
+
+        var results = await service.SearchAsync("anything", new MemorySearchOptions { Filter = new MemoryFilter(UserId: "alice"), TopK = 2, Threshold = 0, Rerank = true });
+
+        Assert.Equal("first", results[0].Memory.Text);
+        Assert.NotNull(results[0].ScoreDetails?.Reranker);
+    }
+
+    [Fact]
+    public async Task DuplicateFactsAreSuppressedWithinTheSameScope()
+    {
+        var service = new MemoryService();
+
+        var first = await service.AddAsync("Alice likes tea", "alice");
+        var duplicate = await service.AddAsync("Alice likes tea", "alice");
+        var otherUser = await service.AddAsync("Alice likes tea", "bob");
+
+        Assert.Single(first.Memories);
+        Assert.Empty(duplicate.Memories);
+        Assert.Equal(MemoryAction.None, Assert.Single(duplicate.Actions!).Event);
+        Assert.Single(otherUser.Memories);
+    }
+
+    [Fact]
+    public async Task ConflictDecisionsUpdateAndDeleteExistingMemories()
+    {
+        var resolver = new QueueConflictResolver();
+        var service = new MemoryService(conflictResolver: resolver);
+        var id = (await service.AddAsync("old city", "alice")).Memories[0].Id;
+        resolver.Decisions = [new MemoryDecision("new city", MemoryAction.Update, id)];
+
+        var update = await service.AddAsync([new Message("user", "I moved")], new MemoryAddOptions { UserId = "alice" });
+        Assert.Equal(MemoryAction.Update, Assert.Single(update.Actions!).Event);
+        Assert.Equal("new city", (await service.GetAsync(id))!.Text);
+
+        resolver.Decisions = [new MemoryDecision(string.Empty, MemoryAction.Delete, id)];
+        var delete = await service.AddAsync([new Message("user", "Forget my city")], new MemoryAddOptions { UserId = "alice" });
+        Assert.Equal(MemoryAction.Delete, Assert.Single(delete.Actions!).Event);
+        Assert.Null(await service.GetAsync(id));
+    }
+
+    [Fact]
+    public async Task ProceduralMemoryRequiresAgentAndUsesGenerator()
+    {
+        var service = new MemoryService(proceduralMemoryGenerator: new StubProcedureGenerator());
+
+        var result = await service.AddAsync([new Message("assistant", "Use the deploy tool")], new MemoryAddOptions
+        {
+            AgentId = "deploy-agent",
+            MemoryType = "procedural_memory"
+        });
+
+        var memory = Assert.Single(result.Memories);
+        Assert.Equal(MemoryScope.Agent, memory.Scope);
+        Assert.Equal("1. Validate. 2. Deploy.", memory.Text);
+    }
+
+    [Fact]
+    public async Task EntitiesAreLinkedBoostedAndCleanedUp()
+    {
+        var entities = new InMemoryEntityStore();
+        var service = new MemoryService(embeddings: new ConstantEmbeddingGenerator(), entityStore: entities);
+        var id = (await service.AddAsync("Alice lives in Berlin", "alice")).Memories[0].Id;
+        await service.AddAsync("Bob likes coffee", "alice");
+
+        var result = Assert.Single((await service.SearchAsync("Alice", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            TopK = 1,
+            Threshold = 0,
+            Explain = true
+        })).Take(1));
+
+        Assert.Equal(id, result.Memory.Id);
+        Assert.True(result.ScoreDetails!.Entity > 0);
+        Assert.Contains(await entities.GetAllAsync(), entity => entity.Text == "Alice" && entity.LinkedMemoryIds.Contains(id));
+
+        await service.DeleteAsync(id);
+        Assert.DoesNotContain(await entities.GetAllAsync(), entity => entity.LinkedMemoryIds.Contains(id));
+    }
+
+    [Fact]
+    public async Task GraphRelationsAreStoredBoostedAndCleanedUp()
+    {
+        var graph = new InMemoryGraphStore();
+        var service = new MemoryService(embeddings: new ConstantEmbeddingGenerator(), graphExtractor: new StubGraphExtractor(), graphStore: graph);
+        var id = (await service.AddAsync("Alice lives in Berlin", "alice")).Memories[0].Id;
+        await service.AddAsync("Bob likes coffee", "alice");
+
+        var relation = Assert.Single(await service.GetRelationsAsync());
+        Assert.Equal(id, relation.MemoryId);
+        var result = Assert.Single((await service.SearchAsync("Where does Alice live?", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"), TopK = 1, Threshold = 0, Explain = true
+        })).Take(1));
+        Assert.Equal(id, result.Memory.Id);
+        Assert.True(result.ScoreDetails!.Entity > 0);
+
+        await service.DeleteAsync(id);
+        Assert.Empty(await service.GetRelationsAsync());
+    }
+
+    [Fact]
+    public async Task BulkDeleteCleansEntityAndGraphLinks()
+    {
+        var entities = new InMemoryEntityStore();
+        var graph = new InMemoryGraphStore();
+        var service = new MemoryService(entityStore: entities, graphExtractor: new StubGraphExtractor(), graphStore: graph);
+        await service.AddAsync("Alice lives in Berlin", "alice");
+
+        Assert.Equal(1, await service.DeleteAllAsync(new MemoryFilter(UserId: "alice")));
+
+        Assert.Empty(await entities.GetAllAsync());
+        Assert.Empty(await graph.GetRelationsAsync());
+    }
+
+    [Fact]
+    public async Task AddManyUsesOneBatchEmbeddingCall()
+    {
+        var embeddings = new CountingBatchEmbeddingGenerator();
+        var service = new MemoryService(embeddings: embeddings);
+
+        var result = await service.AddManyAsync(["first", "second", "third"], new MemoryAddOptions { UserId = "alice" });
+
+        Assert.Equal(3, result.Memories.Count);
+        Assert.Equal(1, embeddings.BatchCalls);
+        Assert.Equal(0, embeddings.SingleCalls);
+    }
+
+    [Fact]
+    public async Task ConfigurationCanAddTelemetryWithoutCapturingContentOrIds()
+    {
+        var telemetry = new InMemoryTelemetryCollector();
+        var service = new MemoryServiceConfiguration { Telemetry = telemetry }.CreateService();
+
+        await service.AddAsync("private fact", "private-user-id");
+        await service.SearchAsync("private query");
+
+        Assert.Equal(["mem0.add", "mem0.search"], telemetry.Events.Select(item => item.Name));
+        var serializedProperties = string.Join(' ', telemetry.Events.SelectMany(item => item.Properties).Select(item => $"{item.Key}:{item.Value}"));
+        Assert.DoesNotContain("private fact", serializedProperties);
+        Assert.DoesNotContain("private-user-id", serializedProperties);
+        Assert.DoesNotContain("private query", serializedProperties);
+    }
+
+    [Fact]
+    public void SynchronousFacadeSupportsCoreCrud()
+    {
+        var memory = new SynchronousMemoryService(new MemoryService());
+
+        var id = memory.Add("sync fact").Memories[0].Id;
+        Assert.Equal("sync fact", memory.Get(id)!.Text);
+        memory.Delete(id);
+        Assert.Null(memory.Get(id));
+    }
+
+    private sealed class ThrowingExtractor : IMemoryExtractor
+    {
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Raw adds must not invoke the extractor.");
+    }
+
+    private sealed class ConstantEmbeddingGenerator : IEmbeddingGenerator
+    {
+        public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<float>>([1, 0]);
+    }
+
+    private sealed class ReverseReranker : IMemoryReranker
+    {
+        public Task<IReadOnlyList<SearchResult>> RerankAsync(string query, IReadOnlyList<SearchResult> candidates, int topK, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<SearchResult> results = candidates.Reverse().Select((result, index) => result with
+            {
+                Score = 1 - index * 0.1,
+                ScoreDetails = (result.ScoreDetails ?? new SearchScoreDetails(result.Score)) with { Reranker = 1 - index * 0.1 }
+            }).Take(topK).ToArray();
+            return Task.FromResult(results);
+        }
+    }
+
+    private sealed class QueueConflictResolver : IMemoryConflictResolver
+    {
+        public IReadOnlyList<MemoryDecision> Decisions { get; set; } = [];
+
+        public Task<IReadOnlyList<MemoryDecision>> ResolveAsync(IReadOnlyList<Message> messages, IReadOnlyList<Memory> existingMemories, MemoryAddOptions options, CancellationToken cancellationToken = default) => Task.FromResult(Decisions);
+    }
+
+    private sealed class StubProcedureGenerator : IProceduralMemoryGenerator
+    {
+        public Task<string> GenerateAsync(IReadOnlyList<Message> messages, string? prompt = null, CancellationToken cancellationToken = default) => Task.FromResult("1. Validate. 2. Deploy.");
+    }
+
+    private sealed class StubGraphExtractor : IGraphMemoryExtractor
+    {
+        public Task<IReadOnlyList<ExtractedRelation>> ExtractAsync(string text, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<ExtractedRelation> relations = text.Contains("Alice", StringComparison.Ordinal)
+                ? [new ExtractedRelation("Alice", "lives in", "Berlin")]
+                : [];
+            return Task.FromResult(relations);
+        }
+    }
+
+    private sealed class CountingBatchEmbeddingGenerator : IBatchEmbeddingGenerator
+    {
+        public int BatchCalls { get; private set; }
+        public int SingleCalls { get; private set; }
+
+        public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
+        {
+            SingleCalls++;
+            return Task.FromResult<IReadOnlyList<float>>([1, 0]);
+        }
+
+        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+        {
+            BatchCalls++;
+            return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
+        }
     }
 
 }

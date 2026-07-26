@@ -10,7 +10,7 @@ public interface IChatCompletionClient
     Task<string> CompleteAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default);
 }
 
-public sealed class OpenAiCompatibleClient : IChatCompletionClient, IEmbeddingGenerator
+public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbeddingGenerator
 {
     private readonly HttpClient httpClient;
     private readonly string apiKey;
@@ -40,16 +40,26 @@ public sealed class OpenAiCompatibleClient : IChatCompletionClient, IEmbeddingGe
 
     public async Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
     {
+        var vectors = await GenerateBatchAsync([text], cancellationToken);
+        return vectors.Count == 0 ? [] : vectors[0];
+    }
+
+    public async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        if (texts.Count == 0) return [];
         using var request = new HttpRequestMessage(HttpMethod.Post, "v1/embeddings")
         {
-            Content = JsonContent.Create(new { model = embeddingModel, input = text })
+            Content = JsonContent.Create(new { model = embeddingModel, input = texts })
         };
         AddAuthentication(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
-        var values = payload?["data"]?[0]?["embedding"]?.AsArray();
-        return values is null ? [] : values.Select(value => value?.GetValue<float>() ?? 0).ToArray();
+        var data = payload?["data"]?.AsArray();
+        if (data is null) return [];
+        return data.OrderBy(item => item?["index"]?.GetValue<int>() ?? 0)
+            .Select(item => (IReadOnlyList<float>)(item?["embedding"]?.AsArray().Select(value => value?.GetValue<float>() ?? 0).ToArray() ?? []))
+            .ToArray();
     }
 
     private void AddAuthentication(HttpRequestMessage request)

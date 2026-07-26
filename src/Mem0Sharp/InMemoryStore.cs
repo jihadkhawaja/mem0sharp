@@ -2,14 +2,22 @@ using System.Collections.Concurrent;
 
 namespace Mem0Sharp;
 
-public sealed class InMemoryStore : IBulkMemoryStore
+public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IMemoryHistoryStore, IResettableMemoryStore
 {
     private readonly ConcurrentDictionary<string, Memory> memories = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<MemoryHistoryEntry>> history = new(StringComparer.Ordinal);
 
     public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         memories[memory.Id] = memory;
+        return Task.CompletedTask;
+    }
+
+    public Task SaveBatchAsync(IReadOnlyList<Memory> items, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        foreach (var memory in items) memories[memory.Id] = memory;
         return Task.CompletedTask;
     }
 
@@ -25,7 +33,7 @@ public sealed class InMemoryStore : IBulkMemoryStore
         foreach (var memory in memories.Values.OrderByDescending(item => item.UpdatedAt))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (Matches(memory, filter))
+            if (MemoryFilterEvaluator.Matches(memory, filter))
             {
                 yield return memory;
             }
@@ -48,10 +56,25 @@ public sealed class InMemoryStore : IBulkMemoryStore
         return matching.Count;
     }
 
-    private static bool Matches(Memory memory, MemoryFilter? filter) =>
-        filter is null ||
-        (filter.UserId is null || memory.UserId == filter.UserId) &&
-        (filter.AgentId is null || memory.AgentId == filter.AgentId) &&
-        (filter.RunId is null || memory.RunId == filter.RunId) &&
-        (filter.Scope is null || memory.Scope == filter.Scope);
+    public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        history.GetOrAdd(entry.MemoryId, static _ => new ConcurrentQueue<MemoryHistoryEntry>()).Enqueue(entry);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<MemoryHistoryEntry> entries = history.TryGetValue(memoryId, out var values) ? values.ToArray() : [];
+        return Task.FromResult(entries);
+    }
+
+    public Task ResetAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        memories.Clear();
+        history.Clear();
+        return Task.CompletedTask;
+    }
 }

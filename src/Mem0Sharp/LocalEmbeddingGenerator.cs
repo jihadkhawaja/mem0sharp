@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Mem0Sharp;
 
-public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
+public sealed class LocalEmbeddingGenerator : IBatchEmbeddingGenerator
 {
     public int Dimensions { get; }
 
@@ -31,6 +31,13 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
             for (var index = 0; index < vector.Length; index++) vector[index] /= norm;
         }
         return Task.FromResult<IReadOnlyList<float>>(vector);
+    }
+
+    public async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        var vectors = new IReadOnlyList<float>[texts.Count];
+        for (var index = 0; index < texts.Count; index++) vectors[index] = await GenerateAsync(texts[index], cancellationToken);
+        return vectors;
     }
 
     private static int StableHash(string value)

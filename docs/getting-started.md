@@ -4,13 +4,24 @@ Mem0Sharp targets .NET 10 and exposes the `MemoryService` API for long-term appl
 
 ## Install
 
-Reference the project during development:
+Mem0Sharp targets .NET 10. Install the NuGet package for an application:
+
+```powershell
+dotnet add package Mem0Sharp
+```
+
+The library has one direct runtime package dependency, `Npgsql`, for its
+PostgreSQL and pgvector stores. The default in-memory path uses only .NET 10
+and the base class libraries. It does not require an AI SDK, an ORM, or a
+vector database package.
+
+Reference the project instead when developing against a local checkout:
 
 ```powershell
 dotnet add .\src\YourApp\YourApp.csproj reference .\src\Mem0Sharp\Mem0Sharp.csproj
 ```
 
-The package also includes the PostgreSQL integration and its Npgsql dependency. Build the library with:
+The package includes the PostgreSQL integration. Build the library with:
 
 ```powershell
 dotnet build .\src\Mem0Sharp\Mem0Sharp.csproj
@@ -83,9 +94,15 @@ var updated = await memory.UpdateAsync(id, "I prefer dark mode and Vim keybindin
 
 await memory.DeleteAsync(id);
 var removed = await memory.DeleteAllAsync(new MemoryFilter(UserId: "alice"));
+
+var history = await memory.GetHistoryAsync(id);
+foreach (var entry in history)
+{
+    Console.WriteLine($"{entry.Event}: {entry.OldMemory} -> {entry.NewMemory}");
+}
 ```
 
-`UpdateAsync` regenerates the embedding. `DeleteAllAsync` returns the number of deleted memories and applies the same filter fields as search and listing.
+`UpdateAsync` regenerates the embedding. `DeleteAllAsync` returns the number of deleted memories and applies the same filter fields as search and listing. Built-in stores record chronological `Add`, `Update`, and `Delete` history events, including events created by filtered bulk deletion.
 
 ## Configure defaults
 
@@ -101,7 +118,21 @@ var memory = new MemoryService(
 
 `MaxCandidateCount` limits how many memories the non-vector fallback examines. Vector stores apply `topK` in the database.
 
+## Expose local MCP tools
+
+`MemoryMcpServer` handles MCP JSON-RPC requests against the same local `IMemoryService`. It exposes add, search, get, update, delete, bulk delete, list-entity, and delete-entity tools without calling a hosted Mem0 service.
+
+```csharp
+var service = new MemoryService();
+var mcp = new MemoryMcpServer(service);
+
+await mcp.RunAsync(Console.OpenStandardInput(), Console.OpenStandardOutput());
+```
+
+Use `HandleAsync` directly when an application already owns its transport.
+
 ## Next steps
 
 - Use [Providers and persistence](providers-and-persistence.md) for model-backed embeddings and PostgreSQL.
 - Use [API reference](api-reference.md) for interfaces, filters, scopes, and custom implementations.
+- Use [Python feature parity](mem0-python-parity.md) to check which Mem0 behaviors and providers are implemented.

@@ -2,6 +2,19 @@
 
 Mem0Sharp separates the service API from embeddings, extraction, and storage. This lets the same application code run locally with deterministic components and in production with model-backed embeddings and a persistent database.
 
+## Dependency boundary
+
+The library has one direct runtime NuGet dependency: `Npgsql`. It is used only
+by `PostgresMemoryStore`, `PostgresEntityStore`, and `PostgresGraphStore`.
+`InMemoryStore`, `LocalEmbeddingGenerator`, the service API, and the provider
+interfaces use .NET 10 and the base class libraries without additional
+packages.
+
+`OpenAiCompatibleClient` uses the `HttpClient` provided by .NET. It does not
+introduce an OpenAI SDK dependency, and it can be replaced with custom
+implementations of `IEmbeddingGenerator` and `IChatCompletionClient` for
+another endpoint or an offline deployment.
+
 ## OpenAI-compatible provider
 
 `OpenAiCompatibleClient` implements both `IEmbeddingGenerator` and `IChatCompletionClient`. It sends requests to the `v1/embeddings` and `v1/chat/completions` paths relative to the supplied `HttpClient.BaseAddress`.
@@ -33,6 +46,10 @@ Keep the embedding model consistent for the lifetime of a vector store. Changing
 
 `PostgresMemoryStore` persists memory fields and embeddings in PostgreSQL. Install PostgreSQL with the `vector` extension available, then initialize the store once before using it:
 
+PostgreSQL and the `vector` extension are external infrastructure. They are
+required only for the persistent PostgreSQL stores; the in-memory store does
+not require a database server.
+
 ```csharp
 var provider = new OpenAiCompatibleClient(
     httpClient,
@@ -49,15 +66,33 @@ var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
 
 await store.InitializeAsync();
 
+var entityStore = new PostgresEntityStore(new PostgresMemoryStoreOptions
+{
+    ConnectionString = Environment.GetEnvironmentVariable("MEM0_POSTGRES")!,
+    EmbeddingDimensions = 1536,
+    TableName = "mem0_memories"
+});
+var graphStore = new PostgresGraphStore(new PostgresMemoryStoreOptions
+{
+    ConnectionString = Environment.GetEnvironmentVariable("MEM0_POSTGRES")!,
+    EmbeddingDimensions = 1536,
+    TableName = "mem0_memories"
+});
+await entityStore.InitializeAsync();
+await graphStore.InitializeAsync();
+
 var memory = new MemoryService(
     store: store,
     embeddings: provider,
-    extractor: new LlmMemoryExtractor(provider));
+    extractor: new LlmMemoryExtractor(provider),
+    entityStore: entityStore,
+    graphExtractor: new LlmGraphMemoryExtractor(provider),
+    graphStore: graphStore);
 ```
 
 `EmbeddingDimensions` must exactly match the number of values returned by the embedding provider. The default OpenAI `text-embedding-3-small` model returns 1536 dimensions.
 
-Initialization creates the table, a user index, and an HNSW cosine index when enabled and supported. HNSW creation is skipped automatically when the configured dimension is greater than 2000. Set `UseHnswIndex` to `false` when an HNSW index is not wanted.
+Memory-store initialization creates the memory table, a `<TableName>_history` audit table, their indexes, and an HNSW cosine index when enabled and supported. The relationship stores create `<TableName>_entities` and `<TableName>_relations`. HNSW creation is skipped automatically when the configured dimension is greater than 2000. Set `UseHnswIndex` to `false` when an HNSW index is not wanted.
 
 Set `CreateExtension = false` when the database user cannot create extensions and the `vector` extension has already been installed by an administrator.
 
@@ -80,6 +115,8 @@ public sealed class MyEmbeddingGenerator : IEmbeddingGenerator
 }
 ```
 
-Implement `IMemoryStore` for CRUD storage. Add `IVectorMemoryStore` when the store can perform similarity search itself; otherwise `MemoryService` uses its local vector cache and scans up to `MaxCandidateCount` memories. Add `IBulkMemoryStore` when filtered deletion can be performed efficiently by the backend.
+Implement `IMemoryStore` for CRUD storage. Add `IVectorMemoryStore` when the store can perform similarity search itself; otherwise `MemoryService` uses its local vector cache and scans up to `MaxCandidateCount` memories. Add `IBulkMemoryStore` when filtered deletion can be performed efficiently by the backend. Add `IMemoryHistoryStore` to retain `ADD`, `UPDATE`, and `DELETE` events and support `GetHistoryAsync`.
 
 All custom implementations should honor cancellation tokens and return vectors with a stable dimension.
+
+These providers are native C# persistence components. They do not call Mem0 Platform. `OpenAiCompatibleClient` is optional and only supplies model inference; use `LocalEmbeddingGenerator`, `BasicMemoryExtractor`, and custom local provider implementations to keep all inference offline.
