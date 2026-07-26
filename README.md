@@ -22,6 +22,7 @@ with, sponsored by, or endorsed by the Mem0 project or mem0ai.
 ## Documentation
 
 - [Getting started](docs/getting-started.md) - install, create a service, and use the core API.
+- [Architecture](docs/architecture.md) - understand dependency direction, source boundaries, and extension rules.
 - [Providers and persistence](docs/providers-and-persistence.md) - configure OpenAI-compatible embeddings, LLM extraction, and PostgreSQL with pgvector.
 - [API reference](docs/api-reference.md) - understand models, filters, scopes, options, and extension points.
 - [Mem0 python feature parity](docs/mem0-python-parity.md) - track implemented, partial, and missing Mem0 capabilities.

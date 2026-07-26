@@ -1,42 +1,4 @@
-using System.Collections.Concurrent;
-
 namespace Mem0Sharp;
-
-public sealed record MemoryServiceConfiguration
-{
-    public IMemoryStore? Store { get; init; }
-    public IEmbeddingGenerator? Embeddings { get; init; }
-    public IMemoryExtractor? Extractor { get; init; }
-    public MemoryOptions? Options { get; init; }
-    public IMemoryReranker? Reranker { get; init; }
-    public IMemoryConflictResolver? ConflictResolver { get; init; }
-    public IProceduralMemoryGenerator? ProceduralMemoryGenerator { get; init; }
-    public IEntityExtractor? EntityExtractor { get; init; }
-    public IEntityStore? EntityStore { get; init; }
-    public IGraphMemoryExtractor? GraphExtractor { get; init; }
-    public IGraphMemoryStore? GraphStore { get; init; }
-    public IMemoryTelemetry? Telemetry { get; init; }
-
-    public IMemoryService CreateService()
-    {
-        IMemoryService service = new MemoryService(Store, Embeddings, Extractor, Options, Reranker, ConflictResolver, ProceduralMemoryGenerator, EntityExtractor, EntityStore, GraphExtractor, GraphStore);
-        return Telemetry is null ? service : new TelemetryMemoryService(service, Telemetry);
-    }
-}
-
-public sealed class InMemoryTelemetryCollector : IMemoryTelemetry
-{
-    private readonly ConcurrentQueue<MemoryTelemetryEvent> events = new();
-
-    public IReadOnlyList<MemoryTelemetryEvent> Events => events.ToArray();
-
-    public Task CaptureAsync(MemoryTelemetryEvent telemetryEvent, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        events.Enqueue(telemetryEvent);
-        return Task.CompletedTask;
-    }
-}
 
 public sealed class TelemetryMemoryService : IMemoryService
 {
@@ -110,23 +72,4 @@ public sealed class TelemetryMemoryService : IMemoryService
         var result = new Dictionary<string, object?>(properties ?? new Dictionary<string, object?>()) { ["success"] = success, ["sync_type"] = "async" };
         return result;
     }
-}
-
-public sealed class SynchronousMemoryService
-{
-    private readonly IMemoryService service;
-
-    public SynchronousMemoryService(IMemoryService service) => this.service = service;
-
-    public AddResult Add(string text, MemoryAddOptions? options = null) => options is null ? service.AddAsync(text).GetAwaiter().GetResult() : service.AddAsync(text, options).GetAwaiter().GetResult();
-    public AddResult Add(IEnumerable<Message> messages, MemoryAddOptions? options = null) => options is null ? service.AddAsync(messages).GetAwaiter().GetResult() : service.AddAsync(messages, options).GetAwaiter().GetResult();
-    public AddResult AddMany(IEnumerable<string> texts, MemoryAddOptions? options = null) => service.AddManyAsync(texts, options).GetAwaiter().GetResult();
-    public IReadOnlyList<SearchResult> Search(string query, MemorySearchOptions? options = null) => options is null ? service.SearchAsync(query).GetAwaiter().GetResult() : service.SearchAsync(query, options).GetAwaiter().GetResult();
-    public Memory? Get(string id) => service.GetAsync(id).GetAwaiter().GetResult();
-    public IReadOnlyList<Memory> GetAll(MemoryFilter? filter = null) => service.GetAllAsync(filter).GetAwaiter().GetResult();
-    public Memory Update(string id, MemoryUpdate update) => service.UpdateAsync(id, update).GetAwaiter().GetResult();
-    public void Delete(string id) => service.DeleteAsync(id).GetAwaiter().GetResult();
-    public int DeleteAll(MemoryFilter? filter = null) => service.DeleteAllAsync(filter).GetAwaiter().GetResult();
-    public IReadOnlyList<MemoryHistoryEntry> History(string id) => service.GetHistoryAsync(id).GetAwaiter().GetResult();
-    public void Reset() => service.ResetAsync().GetAwaiter().GetResult();
 }
