@@ -21,6 +21,7 @@ with, sponsored by, or endorsed by the Mem0 project or mem0ai.
 
 ## Documentation
 
+- [Contribution guide](contribution.md) - set up the repository, run checks, and prepare pull requests.
 - [Getting started](docs/getting-started.md) - install, create a service, and use the core API.
 - [Architecture](docs/architecture.md) - understand dependency direction, source boundaries, and extension rules.
 - [Providers and persistence](docs/providers-and-persistence.md) - configure OpenAI-compatible embeddings, LLM extraction, and PostgreSQL with pgvector.
