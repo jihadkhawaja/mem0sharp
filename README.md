@@ -24,7 +24,7 @@ with, sponsored by, or endorsed by the Mem0 project or mem0ai.
 - [Contribution guide](contribution.md) - set up the repository, run checks, and prepare pull requests.
 - [Getting started](docs/getting-started.md) - install, create a service, and use the core API.
 - [Architecture](docs/architecture.md) - understand dependency direction, source boundaries, and extension rules.
-- [Providers and persistence](docs/providers-and-persistence.md) - configure OpenAI-compatible embeddings, LLM extraction, and PostgreSQL with pgvector.
+- [Providers and persistence](docs/providers-and-persistence.md) - configure custom model providers and PostgreSQL with pgvector.
 - [API reference](docs/api-reference.md) - understand models, filters, scopes, options, and extension points.
 - [Mem0 python feature parity](docs/mem0-python-parity.md) - track implemented, partial, and missing Mem0 capabilities.
 
@@ -36,11 +36,10 @@ the PostgreSQL and pgvector stores. The default in-memory service and the
 provider interfaces use only .NET 10 and the base class libraries; no AI SDK,
 HTTP client package, ORM, or vector database package is required.
 
-Model access is provider-based. `OpenAiCompatibleClient` uses the .NET
-`HttpClient` and does not add another package. Replace it with implementations
-of `IChatCompletionClient` and `IEmbeddingGenerator` when using a different
-model service or a fully offline deployment. PostgreSQL itself and its
-`vector` extension are infrastructure prerequisites, not NuGet dependencies.
+Model access is provider-based. Implement `IChatCompletionClient` and
+`IEmbeddingGenerator` for the model service used by your application, or use
+the built-in local components for offline development. PostgreSQL itself and
+its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 
 ## Features
 
@@ -57,7 +56,6 @@ model service or a fully offline deployment. PostgreSQL itself and its
 - Zero-dependency in-memory storage for tests and local development.
 - One direct runtime package dependency: `Npgsql`; all other provider boundaries are native .NET abstractions.
 - Deterministic local embeddings for offline development.
-- OpenAI-compatible chat completion and embedding support.
 - PostgreSQL persistence with pgvector and optional HNSW indexing.
 
 ## Quick start
@@ -100,20 +98,9 @@ userId: "alice",
 scope: MemoryScope.User);
 ```
 
-## OpenAI-compatible provider
-
-Pass an `HttpClient` whose `BaseAddress` points at the provider root, such as `https://api.openai.com/`:
-
-```csharp
-var provider = new OpenAiCompatibleClient(httpClient, Environment.GetEnvironmentVariable("OPENAI_API_KEY")!);
-var memory = new MemoryService(
-	embeddings: provider,
-	extractor: new LlmMemoryExtractor(provider));
-```
-
 ## PostgreSQL with pgvector
 
-Install PostgreSQL with the `vector` extension, then initialize a store using the same embedding dimension as the configured embedding model:
+Install PostgreSQL with the `vector` extension, then initialize a store using the same embedding dimension as your configured `IEmbeddingGenerator`:
 
 ```csharp
 var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
@@ -124,16 +111,18 @@ var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
 });
 await store.InitializeAsync();
 
-var memory = new MemoryService(store, provider, new LlmMemoryExtractor(provider));
+var memory = new MemoryService(store);
 ```
 
 The store persists memory metadata and embeddings, applies user/agent/run/scope filters in SQL, uses cosine distance for vector search, and creates an HNSW index when the embedding dimension is supported by pgvector. `CreateExtension = false` can be used when the database user cannot create extensions.
 
 `MemoryService` also provides `SearchManyAsync` for batch queries and `DeleteAllAsync` for filtered bulk deletion.
 
-Mem0Sharp never sends memories to a Mem0 or mem0.ai backend. `OpenAiCompatibleClient` is an optional model provider for extraction and embeddings; replace it with local implementations of `IChatCompletionClient` and `IEmbeddingGenerator` for a fully offline deployment.
-
-The provider boundary also works with compatible local servers. See [Providers and persistence](docs/providers-and-persistence.md) for model selection, embedding dimensions, and initialization details.
+Mem0Sharp never sends memories to a Mem0 or mem0.ai backend. Supply your own
+implementations of `IChatCompletionClient` and `IEmbeddingGenerator` when you
+need model-backed extraction or embeddings. Use the built-in local components
+for a fully offline deployment. See [Providers and persistence](docs/providers-and-persistence.md)
+for provider contracts, embedding dimensions, and initialization details.
 
 ## Install from NuGet.org
 
