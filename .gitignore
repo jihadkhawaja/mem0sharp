@@ -401,8 +401,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 # Local test credentials
-tests/Mem0Sharp.Tests/testsettings.local.yaml
+testsettings.local.yaml
 
 # Local sample credentials
-samples/MemoryBehaviors/sampleconfig.local.yaml
-samples/PostgresOpenAI/sampleconfig.local.yaml
+sampleconfig.local.yaml
