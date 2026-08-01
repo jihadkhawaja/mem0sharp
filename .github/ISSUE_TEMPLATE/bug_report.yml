@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem with Mem0Sharp
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please avoid including secrets or private memory data.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest example or steps that reproduce the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Mem0Sharp version
+      placeholder: "e.g. 0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: dotnet
+    attributes:
+      label: .NET SDK version
+      placeholder: "e.g. 10.0.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - In-memory store
+        - PostgreSQL / pgvector
+        - Qdrant
+        - Ollama
+        - OpenAI-compatible provider
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or code
+      description: Remove credentials, personal data, and production memory contents before posting.
+      render: text

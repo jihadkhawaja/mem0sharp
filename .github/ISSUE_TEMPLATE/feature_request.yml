@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an improvement or new capability for Mem0Sharp
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What use case or limitation would this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or API you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative designs you considered.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Project fit
+      options:
+        - label: This proposal is focused on Mem0Sharp and does not require the hosted Mem0 Platform API.
+          required: true
+        - label: I have searched existing issues and pull requests for duplicates.
+          required: true

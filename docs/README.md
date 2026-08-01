@@ -23,7 +23,7 @@ Mem0Sharp is a standalone .NET memory library. It runs locally or with providers
 - [API reference](api-reference.md) describes public contracts and configuration models.
 - [Architecture](architecture.md) explains dependency direction and extension boundaries.
 - [Mem0 Python feature parity](mem0-python-parity.md) tracks behavioral and provider coverage.
-- [Contribution guide](../contribution.md) covers local development and pull requests.
+- [Contribution guide](../CONTRIBUTING.md) covers local development and pull requests.
 
 ## Important defaults
 
