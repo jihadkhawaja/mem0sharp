@@ -5,6 +5,11 @@ public interface IMemoryExtractor
     Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default);
 }
 
+public interface IBehaviorAwareMemoryExtractor : IMemoryExtractor
+{
+    Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default);
+}
+
 public interface IMemoryReranker
 {
     Task<IReadOnlyList<SearchResult>> RerankAsync(string query, IReadOnlyList<SearchResult> candidates, int topK, CancellationToken cancellationToken = default);

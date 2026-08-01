@@ -48,6 +48,10 @@ public sealed class MemoryService : IMemoryService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         ArgumentNullException.ThrowIfNull(options);
+        if (options.Infer && options.Behavior != MemoryBehavior.Normal)
+        {
+            return AddAsync([new Message("user", text)], options, cancellationToken);
+        }
         return SaveInputsAsync([new MemoryInput(text, options.Scope, options.Metadata, options.ExpiresAt)], options, cancellationToken);
     }
 
@@ -70,11 +74,24 @@ public sealed class MemoryService : IMemoryService
             return await ApplyDecisionsAsync(decisions, options, cancellationToken);
         }
         IReadOnlyList<MemoryInput> inputs = options.Infer
-            ? await extractor.ExtractAsync(materialized, cancellationToken)
+            ? await ExtractAsync(materialized, options, cancellationToken)
             : materialized.Where(message => !string.IsNullOrWhiteSpace(message.Content))
                 .Select(message => new MemoryInput(message.Content.Trim(), Metadata: new Dictionary<string, string> { ["role"] = message.Role }))
                 .ToArray();
         return await SaveInputsAsync(inputs.Select(input => input with { Scope = options.Scope }), options, cancellationToken);
+    }
+
+    private Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions addOptions, CancellationToken cancellationToken)
+    {
+        if (addOptions.Behavior == MemoryBehavior.Normal)
+        {
+            return extractor.ExtractAsync(messages, cancellationToken);
+        }
+        if (extractor is IBehaviorAwareMemoryExtractor behaviorAwareExtractor)
+        {
+            return behaviorAwareExtractor.ExtractAsync(messages, addOptions, cancellationToken);
+        }
+        throw new NotSupportedException($"Memory behavior '{addOptions.Behavior}' requires an IBehaviorAwareMemoryExtractor.");
     }
 
     public Task<AddResult> AddManyAsync(IEnumerable<string> texts, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)

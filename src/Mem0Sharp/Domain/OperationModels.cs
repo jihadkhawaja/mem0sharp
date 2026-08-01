@@ -11,7 +11,16 @@ public sealed record MemoryAddOptions
     public bool Infer { get; init; } = true;
     public string? Prompt { get; init; }
     public string? MemoryType { get; init; }
+    public MemoryBehavior Behavior { get; init; } = MemoryBehavior.Normal;
     public bool Deduplicate { get; init; } = true;
+}
+
+public enum MemoryBehavior
+{
+    Normal,
+    Dreaming,
+    RandomThoughts,
+    PersonalMemory
 }
 
 public sealed record MemoryUpdate

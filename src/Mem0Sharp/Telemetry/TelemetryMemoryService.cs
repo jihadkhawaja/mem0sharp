@@ -18,10 +18,10 @@ public sealed class TelemetryMemoryService : IMemoryService
         CaptureAsync("mem0.add", () => inner.AddAsync(messages, userId, agentId, runId, scope, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["scope"] = scope.ToString() }, cancellationToken);
 
     public Task<AddResult> AddAsync(string text, MemoryAddOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(text, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "text", ["infer"] = options.Infer }, cancellationToken);
+        CaptureAsync("mem0.add", () => inner.AddAsync(text, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "text", ["infer"] = options.Infer, ["behavior"] = options.Behavior.ToString() }, cancellationToken);
 
     public Task<AddResult> AddAsync(IEnumerable<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(messages, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["infer"] = options.Infer }, cancellationToken);
+        CaptureAsync("mem0.add", () => inner.AddAsync(messages, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["infer"] = options.Infer, ["behavior"] = options.Behavior.ToString() }, cancellationToken);
 
     public Task<AddResult> AddManyAsync(IEnumerable<string> texts, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
         CaptureAsync("mem0.add_many", () => inner.AddManyAsync(texts, options, cancellationToken), cancellationToken: cancellationToken);

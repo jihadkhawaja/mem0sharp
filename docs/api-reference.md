@@ -39,7 +39,8 @@ All methods are asynchronous and accept an optional `CancellationToken`.
 - `SearchResult` contains a `Memory` and its similarity `Score`.
 - `AddResult` contains the memories created by an add operation.
 - `MemoryHistoryEntry` contains the event type, old and new text, memory ID, event ID, original creation time, event update time, deletion state, actor ID, and role.
-- `MemoryAddOptions` controls identity, scope, inference, procedural memory, expiration, metadata, custom prompts, and deduplication.
+- `MemoryAddOptions` controls identity, scope, inference, procedural memory, expiration, metadata, custom prompts, deduplication, and optional `MemoryBehavior` shaping.
+- `MemoryBehavior` selects `Normal` (the unchanged default), `Dreaming`, `RandomThoughts`, or `PersonalMemory`. Non-normal modes require inference and an `IBehaviorAwareMemoryExtractor` such as `LlmMemoryExtractor`.
 - `MemorySearchOptions` controls filtering, top K, threshold, hybrid scoring, explanations, and reranking.
 - `MemoryUpdate` supports optional text, metadata, and expiration changes.
 - `MemoryPage` contains paged results and total count.
@@ -81,6 +82,7 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 - `OpenAiCompatibleClient`, `OllamaClient`, and `LocalEmbeddingGenerator` provide hosted and local embedding protocols.
 - `OpenAiCompatibleClient`, `AnthropicClient`, and `OllamaClient` provide hosted and local chat protocols.
 - `IMemoryExtractor` converts messages into `MemoryInput` values.
+- `IBehaviorAwareMemoryExtractor` optionally adds behavior and persona-aware extraction without changing existing `IMemoryExtractor` implementations.
 - `IMemoryStore` provides basic persistence operations.
 - `IVectorMemoryStore` adds backend similarity search.
 - `InMemoryStore`, `PostgresMemoryStore`, and `QdrantMemoryStore` provide local, SQL/pgvector, and remote vector persistence.

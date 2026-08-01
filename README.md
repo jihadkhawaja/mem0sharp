@@ -44,6 +44,7 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 - CRUD operations plus filtered bulk deletion.
 - Persistent `ADD`, `UPDATE`, and `DELETE` history with audit timestamps, deletion state, actor, and role for built-in stores.
 - Scope-aware deduplication and conflict-aware Add/Update/Delete/None decisions.
+- Optional normal, dreaming, random-thought, and first-person personal memory behaviors.
 - Expiration, paging, nested metadata filters, entities, and optional graph memory.
 - Batch embedding and transactional PostgreSQL batch persistence.
 - Native synchronous facade, opt-in telemetry, and nine local MCP tools.
@@ -130,6 +131,7 @@ for provider contracts, embedding dimensions, and initialization details.
 ## Samples
 
 - [Getting started](samples/GettingStarted/README.md) - zero-setup CRUD, search, and history.
+- [Memory behaviors](samples/MemoryBehaviors/README.md) - compare conventional fact extraction with dreaming, random thoughts, and agent-personal memory.
 - [Ollama](samples/Ollama/README.md) - local model-backed extraction and embeddings.
 - [PostgreSQL and OpenAI](samples/PostgresOpenAI/README.md) - persistent pgvector storage with OpenAI-compatible models.
 

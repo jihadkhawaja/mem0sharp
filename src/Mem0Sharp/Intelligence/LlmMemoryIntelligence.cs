@@ -10,10 +10,11 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
 
     public async Task<IReadOnlyList<MemoryDecision>> ResolveAsync(IReadOnlyList<Message> messages, IReadOnlyList<Memory> existingMemories, MemoryAddOptions options, CancellationToken cancellationToken = default)
     {
+        const string normalPrompt = "Extract durable facts and reconcile them with existing memories. Return JSON only: {\"memory\":[{\"text\":\"fact\",\"event\":\"ADD|UPDATE|DELETE|NONE\",\"id\":\"existing numeric id when required\"}]}";
         var existing = existingMemories.Select((memory, index) => new { id = index.ToString(), text = memory.Text }).ToArray();
         var response = await client.CompleteAsync(
         [
-            new Message("system", "Extract durable facts and reconcile them with existing memories. Return JSON only: {\"memory\":[{\"text\":\"fact\",\"event\":\"ADD|UPDATE|DELETE|NONE\",\"id\":\"existing numeric id when required\"}]}"),
+            new Message("system", MemoryBehaviorPrompts.ForConflictResolution(normalPrompt, options)),
             new Message("user", JsonSerializer.Serialize(new { existing, messages, instructions = options.Prompt }))
         ], cancellationToken);
 

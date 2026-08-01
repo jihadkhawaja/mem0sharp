@@ -91,7 +91,9 @@ public sealed class MemoryMcpServer
             UserId = Text(arguments, "user_id") ?? "default_user",
             AgentId = Text(arguments, "agent_id"),
             RunId = Text(arguments, "run_id"),
-            Infer = Bool(arguments, "infer", true)
+            Infer = Bool(arguments, "infer", true),
+            Behavior = Behavior(arguments),
+            Prompt = Text(arguments, "prompt")
         }, cancellationToken);
         return result;
     }
@@ -143,7 +145,7 @@ public sealed class MemoryMcpServer
 
     private static JsonArray CreateTools() =>
     [
-        Tool("add_memory", "Store a memory in the local C# memory service.", Properties(("text", "string"), ("user_id", "string"), ("agent_id", "string"), ("run_id", "string"), ("infer", "boolean")), ["text"]),
+        Tool("add_memory", "Store a memory in the local C# memory service.", Properties(("text", "string"), ("user_id", "string"), ("agent_id", "string"), ("run_id", "string"), ("infer", "boolean"), ("behavior", "string"), ("prompt", "string")), ["text"]),
         Tool("search_memories", "Search local memories.", Properties(("query", "string"), ("user_id", "string"), ("agent_id", "string"), ("run_id", "string"), ("top_k", "integer"), ("threshold", "number"), ("rerank", "boolean"), ("explain", "boolean")), ["query"]),
         Tool("get_memories", "List local memories.", Properties(("user_id", "string"), ("agent_id", "string"), ("run_id", "string"), ("include_expired", "boolean"))),
         Tool("get_memory", "Get one local memory.", Properties(("memory_id", "string")), ["memory_id"]),
@@ -199,6 +201,15 @@ public sealed class MemoryMcpServer
 
     private static string Required(JsonObject arguments, string name) => Text(arguments, name) ?? throw new ArgumentException($"'{name}' is required.");
     private static string? Text(JsonObject arguments, string name) => arguments[name]?.GetValue<string>();
+    private static MemoryBehavior Behavior(JsonObject arguments)
+    {
+        var value = Text(arguments, "behavior");
+        if (string.IsNullOrWhiteSpace(value)) return MemoryBehavior.Normal;
+        var normalized = value.Replace("_", string.Empty, StringComparison.Ordinal).Replace("-", string.Empty, StringComparison.Ordinal);
+        return Enum.TryParse<MemoryBehavior>(normalized, true, out var behavior) && Enum.IsDefined(behavior)
+            ? behavior
+            : throw new ArgumentException("'behavior' must be normal, dreaming, random_thoughts, or personal_memory.");
+    }
     private static bool Bool(JsonObject arguments, string name, bool fallback = false) => arguments[name]?.GetValue<bool>() ?? fallback;
     private static int Integer(JsonObject arguments, string name, int fallback) => arguments[name]?.GetValue<int>() ?? fallback;
     private static double Number(JsonObject arguments, string name, double fallback) => arguments[name]?.GetValue<double>() ?? fallback;

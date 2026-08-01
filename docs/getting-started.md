@@ -87,6 +87,33 @@ scope: MemoryScope.User);
 
 For model-backed fact extraction, use `LlmMemoryExtractor` with an OpenAI-compatible client as described in [Providers and persistence](providers-and-persistence.md).
 
+## Choose a memory behavior
+
+`MemoryAddOptions.Behavior` optionally changes how inferred memories are shaped. The default is `MemoryBehavior.Normal`, which preserves the existing durable-fact extraction behavior.
+
+```csharp
+var result = await memory.AddAsync(messages, new MemoryAddOptions
+{
+    UserId = "alice",
+    AgentId = "mira",
+    Behavior = MemoryBehavior.PersonalMemory,
+    Prompt = "You are Mira, a thoughtful companion who notices emotional meaning."
+});
+```
+
+The available behaviors are:
+
+- `Normal` extracts neutral, durable facts as before.
+- `Dreaming` consolidates themes, emotional patterns, and tentative associations.
+- `RandomThoughts` records useful or surprising associations inspired by the conversation.
+- `PersonalMemory` records what the agent noticed or concluded in first-person language; use `Prompt` to supply its personality or perspective.
+
+These opt-in modes differ from conventional Mem0-style fact extraction by allowing reflective and agent-owned memories, not only neutral user facts. Prompts require uncertain associations to remain tentative rather than being stored as invented facts.
+
+Behavior shaping requires `Infer = true` and an `IBehaviorAwareMemoryExtractor`; the built-in `LlmMemoryExtractor` implements it. `Infer = false` stores content verbatim regardless of the selected behavior. Third-party `IMemoryExtractor` implementations remain source-compatible and continue to work with `Normal`.
+
+See the [memory behaviors sample](../samples/MemoryBehaviors/README.md) for a runnable comparison of every mode.
+
 ## Read, update, and delete
 
 ```csharp

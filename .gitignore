@@ -404,4 +404,5 @@ FodyWeavers.xsd
 tests/Mem0Sharp.Tests/testsettings.local.yaml
 
 # Local sample credentials
+samples/MemoryBehaviors/sampleconfig.local.yaml
 samples/PostgresOpenAI/sampleconfig.local.yaml

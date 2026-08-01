@@ -17,7 +17,8 @@ public sealed class MemoryMcpServerTests
 
         var tools = response!["result"]!["tools"]!.AsArray();
         Assert.Equal(9, tools.Count);
-        Assert.Contains(tools, tool => tool!["name"]!.GetValue<string>() == "add_memory");
+        var addTool = Assert.Single(tools, tool => tool!["name"]!.GetValue<string>() == "add_memory");
+        Assert.NotNull(addTool!["inputSchema"]!["properties"]!["behavior"]);
         Assert.Contains(tools, tool => tool!["name"]!.GetValue<string>() == "delete_entities");
     }
 
@@ -39,5 +40,40 @@ public sealed class MemoryMcpServerTests
         Assert.False(response!["result"]!["isError"]!.GetValue<bool>());
         var stored = Assert.Single(await memory.GetAllAsync(new MemoryFilter(UserId: "alice")));
         Assert.Equal("local only", stored.Text);
+    }
+
+    [Fact]
+    public async Task AddMemoryToolAcceptsSnakeCaseBehavior()
+    {
+        var extractor = new RecordingBehaviorExtractor();
+        var memory = new MemoryService(extractor: extractor);
+        var server = new MemoryMcpServer(memory);
+
+        var response = await server.HandleAsync(JsonNode.Parse("""
+            {
+              "jsonrpc":"2.0",
+              "id":"add-behavior",
+              "method":"tools/call",
+              "params":{"name":"add_memory","arguments":{"text":"follow this thought","behavior":"random_thoughts"}}
+            }
+            """)!);
+
+        Assert.False(response!["result"]!["isError"]!.GetValue<bool>());
+        Assert.Equal(MemoryBehavior.RandomThoughts, extractor.Options!.Behavior);
+        Assert.Equal("shaped thought", Assert.Single(await memory.GetAllAsync()).Text);
+    }
+
+    private sealed class RecordingBehaviorExtractor : IBehaviorAwareMemoryExtractor
+    {
+        public MemoryAddOptions? Options { get; private set; }
+
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MemoryInput>>([new MemoryInput("normal thought")]);
+
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default)
+        {
+            Options = options;
+            return Task.FromResult<IReadOnlyList<MemoryInput>>([new MemoryInput("shaped thought")]);
+        }
     }
 }
