@@ -6,6 +6,8 @@ Long-term memory for AI applications in .NET 10. Mem0Sharp is an independent, st
 
 Mem0Sharp is not affiliated with, sponsored by, or endorsed by Mem0 or mem0ai.
 
+Mem0Sharp goes beyond porting Mem0 to .NET. It adds native capabilities such as **memory behaviors**, letting agents remember normally, consolidate experiences like dreams, surface spontaneous associations, or shape first-person memories through their own identity and personality.
+
 ## Install
 
 ```powershell
@@ -44,7 +46,7 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 - CRUD operations plus filtered bulk deletion.
 - Persistent `ADD`, `UPDATE`, and `DELETE` history with audit timestamps, deletion state, actor, and role for built-in stores.
 - Scope-aware deduplication and conflict-aware Add/Update/Delete/None decisions.
-- Optional normal, dreaming, random-thought, and first-person personal memory behaviors.
+- Memory behaviors beyond traditional fact storage: normal, dreaming, random thoughts, and personality-shaped first-person memory.
 - Expiration, paging, nested metadata filters, entities, and optional graph memory.
 - Batch embedding and transactional PostgreSQL batch persistence.
 - Native synchronous facade, opt-in telemetry, and nine local MCP tools.
