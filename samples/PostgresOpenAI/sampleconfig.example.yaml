@@ -1,0 +1,10 @@
+openAi:
+  endpoint: https://api.openai.com/
+  apiKey: replace-with-an-openai-api-key
+  chatModel: gpt-5-mini
+  embeddingModel: text-embedding-3-small
+
+postgres:
+  connectionString: Host=localhost;Port=5432;Database=mem0;Username=postgres;Password=postgres
+  embeddingDimensions: 1536
+  tableName: sample_memories

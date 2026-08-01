@@ -15,4 +15,8 @@ public sealed record MemoryHistoryEntry
     public string? OldMemory { get; init; }
     public string? NewMemory { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+    public bool IsDeleted { get; init; }
+    public string? ActorId { get; init; }
+    public string? Role { get; init; }
 }

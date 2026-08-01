@@ -1,0 +1,5 @@
+openAi:
+  endpoint: https://api.openai.com/
+  apiKey: replace-with-an-openai-api-key
+  chatModel: gpt-4o-mini
+  embeddingModel: text-embedding-3-small

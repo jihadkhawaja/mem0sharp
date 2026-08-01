@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/GettingStarted/GettingStarted.csproj" />
+    <Project Path="samples/Ollama/Ollama.csproj" />
+    <Project Path="samples/PostgresOpenAI/PostgresOpenAI.csproj" />
+  </Folder>
+  <Folder Name="/src/" />
   <Project Path="src/Mem0Sharp/Mem0Sharp.csproj" />
   <Project Path="tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj" />
 </Solution>

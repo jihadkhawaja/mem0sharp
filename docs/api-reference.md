@@ -18,7 +18,7 @@ and persistence backends are replaceable through the interfaces below.
 | `AddAsync(IEnumerable<Message>, ...)` | Extract and save memories from conversation messages. |
 | `AddManyAsync(IEnumerable<string>, ...)` | Deduplicate, batch embed, and save several memories. |
 | `SearchAsync(string, ...)` | Return the most relevant memories for a query. |
-| `SearchManyAsync(IEnumerable<string>, ...)` | Search several queries with the same filter. |
+| `SearchManyAsync(IEnumerable<string>, ...)` | Search several queries with the same filter, using batch-capable embedding and vector providers when available. |
 | `GetAsync(string)` | Retrieve one memory by ID. |
 | `GetAllAsync(MemoryFilter?)` | List memories, newest updated first. |
 | `GetPageAsync(MemoryPageOptions, MemoryFilter?)` | Return a page plus the total matching count. |
@@ -38,7 +38,7 @@ All methods are asynchronous and accept an optional `CancellationToken`.
 - `Message` contains a conversation `Role` and `Content`.
 - `SearchResult` contains a `Memory` and its similarity `Score`.
 - `AddResult` contains the memories created by an add operation.
-- `MemoryHistoryEntry` contains the event type, old and new text, memory ID, event ID, and timestamp.
+- `MemoryHistoryEntry` contains the event type, old and new text, memory ID, event ID, original creation time, event update time, deletion state, actor ID, and role.
 - `MemoryAddOptions` controls identity, scope, inference, procedural memory, expiration, metadata, custom prompts, and deduplication.
 - `MemorySearchOptions` controls filtering, top K, threshold, hybrid scoring, explanations, and reranking.
 - `MemoryUpdate` supports optional text, metadata, and expiration changes.
@@ -78,18 +78,21 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 ## Extension points
 
 - `IEmbeddingGenerator` generates a vector for text.
+- `OpenAiCompatibleClient`, `OllamaClient`, and `LocalEmbeddingGenerator` provide hosted and local embedding protocols.
+- `OpenAiCompatibleClient`, `AnthropicClient`, and `OllamaClient` provide hosted and local chat protocols.
 - `IMemoryExtractor` converts messages into `MemoryInput` values.
 - `IMemoryStore` provides basic persistence operations.
 - `IVectorMemoryStore` adds backend similarity search.
+- `InMemoryStore`, `PostgresMemoryStore`, and `QdrantMemoryStore` provide local, SQL/pgvector, and remote vector persistence.
 - `IBulkMemoryStore` adds efficient filtered bulk deletion.
 - `IMemoryHistoryStore` persists and retrieves the audit trail used by `GetHistoryAsync`.
-- `IBatchEmbeddingGenerator`, `IBatchMemoryStore`, and `IBatchVectorMemoryStore` enable batch pipelines.
+- `IBatchEmbeddingGenerator`, `IBatchMemoryStore`, and `IBatchVectorMemoryStore` enable batch pipelines. Batch vector stores can override `SearchBatchAsync`; the default implementation preserves compatibility with a sequential fallback.
 - `IMemoryConflictResolver` produces structured memory actions.
 - `IEntityExtractor`/`IEntityStore` and `IGraphMemoryExtractor`/`IGraphMemoryStore` provide relationship memory.
-- `IMemoryReranker` reranks fused search candidates.
+- `IMemoryReranker` reranks fused search candidates. Built-in implementations cover LLM scoring, Cohere, ZeroEntropy, and local cross-encoders through `ICrossEncoderScorer`.
 - `IMemoryTelemetry` receives privacy-preserving operation events when configured.
 
-`MemoryServiceConfiguration` composes these providers without any hosted Mem0 dependency. `SynchronousMemoryService` exposes blocking equivalents for applications that cannot use async APIs. `MemoryMcpServer` exposes local JSON-RPC tools over `IMemoryService`.
+`MemoryServiceConfiguration` composes these providers without any hosted Mem0 dependency. `SynchronousMemoryService` exposes blocking equivalents for applications that cannot use async APIs, including batch search, paging, and graph relation retrieval. `MemoryMcpServer` exposes local JSON-RPC tools over `IMemoryService`.
 
 The service only requires `IMemoryStore`. If the supplied store does not implement `IVectorMemoryStore`, it falls back to generating and caching vectors in the service process. If it does not implement `IMemoryHistoryStore`, no history events are recorded and `GetHistoryAsync` returns an empty list. These fallbacks are suitable for local development and small datasets; use vector- and history-capable persistent stores for production workloads.
 

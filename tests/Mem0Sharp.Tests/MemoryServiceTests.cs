@@ -59,7 +59,11 @@ public sealed class MemoryServiceTests
     {
         var store = new InMemoryStore();
         var service = new MemoryService(store);
-        var added = await service.AddAsync("old preference", "alice");
+        var added = await service.AddAsync("old preference", new MemoryAddOptions
+        {
+            UserId = "alice",
+            Metadata = new Dictionary<string, string> { ["actor_id"] = "assistant", ["role"] = "writer" }
+        });
         var id = added.Memories[0].Id;
 
         await service.UpdateAsync(id, "new preference");
@@ -74,18 +78,29 @@ public sealed class MemoryServiceTests
                 Assert.Equal(MemoryHistoryEvent.Add, entry.Event);
                 Assert.Null(entry.OldMemory);
                 Assert.Equal("old preference", entry.NewMemory);
+                Assert.Equal(added.Memories[0].CreatedAt, entry.CreatedAt);
+                Assert.Equal(added.Memories[0].UpdatedAt, entry.UpdatedAt);
+                Assert.False(entry.IsDeleted);
+                Assert.Equal("assistant", entry.ActorId);
+                Assert.Equal("writer", entry.Role);
             },
             entry =>
             {
                 Assert.Equal(MemoryHistoryEvent.Update, entry.Event);
                 Assert.Equal("old preference", entry.OldMemory);
                 Assert.Equal("new preference", entry.NewMemory);
+                Assert.Equal(added.Memories[0].CreatedAt, entry.CreatedAt);
+                Assert.True(entry.UpdatedAt >= entry.CreatedAt);
+                Assert.False(entry.IsDeleted);
             },
             entry =>
             {
                 Assert.Equal(MemoryHistoryEvent.Delete, entry.Event);
                 Assert.Equal("new preference", entry.OldMemory);
                 Assert.Null(entry.NewMemory);
+                Assert.Equal(added.Memories[0].CreatedAt, entry.CreatedAt);
+                Assert.True(entry.UpdatedAt >= entry.CreatedAt);
+                Assert.True(entry.IsDeleted);
             });
     }
 
@@ -327,6 +342,23 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task SearchManyUsesOneBatchEmbeddingAndVectorStoreCall()
+    {
+        var embeddings = new CountingBatchEmbeddingGenerator();
+        var vectorStore = new CountingBatchVectorStore();
+        var service = new MemoryService(store: vectorStore, embeddings: embeddings);
+
+        var results = await service.SearchManyAsync(["first", "second"]);
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result => Assert.Single(result));
+        Assert.Equal(1, embeddings.BatchCalls);
+        Assert.Equal(0, embeddings.SingleCalls);
+        Assert.Equal(1, vectorStore.BatchSearchCalls);
+        Assert.Equal(0, vectorStore.SingleSearchCalls);
+    }
+
+    [Fact]
     public async Task ConfigurationCanAddTelemetryWithoutCapturingContentOrIds()
     {
         var telemetry = new InMemoryTelemetryCollector();
@@ -343,12 +375,19 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
-    public void SynchronousFacadeSupportsCoreCrud()
+    public void SynchronousFacadeWrapsTheAsyncServiceSurface()
     {
-        var memory = new SynchronousMemoryService(new MemoryService());
+        var memory = new SynchronousMemoryService(new MemoryService(graphExtractor: new StubGraphExtractor(), graphStore: new InMemoryGraphStore()));
 
-        var id = memory.Add("sync fact").Memories[0].Id;
-        Assert.Equal("sync fact", memory.Get(id)!.Text);
+        var id = memory.Add("Alice lives in Berlin").Memories[0].Id;
+        memory.Add("sync fact");
+
+        Assert.Equal(2, memory.SearchMany(["Alice", "sync"]).Count);
+        var page = memory.GetPage(new MemoryPageOptions { Offset = 1, Limit = 1 });
+        Assert.Equal(2, page.Total);
+        Assert.Single(page.Results);
+        Assert.Equal(id, Assert.Single(memory.GetRelations()).MemoryId);
+
         memory.Delete(id);
         Assert.Null(memory.Get(id));
     }
@@ -415,6 +454,39 @@ public sealed class MemoryServiceTests
         {
             BatchCalls++;
             return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
+        }
+    }
+
+    private sealed class CountingBatchVectorStore : IBatchVectorMemoryStore
+    {
+        private readonly Memory result = new() { Id = "result", Text = "batch result", UserId = "default_user" };
+
+        public int BatchSearchCalls { get; private set; }
+        public int SingleSearchCalls { get; private set; }
+
+        public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => Task.FromResult<Memory?>(null);
+        public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.CompletedTask;
+            yield break;
+        }
+        public Task DeleteAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
+        {
+            SingleSearchCalls++;
+            return Task.FromResult<IReadOnlyList<SearchResult>>([new SearchResult(result, 1)]);
+        }
+
+        public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchBatchAsync(IReadOnlyList<IReadOnlyList<float>> embeddings, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
+        {
+            BatchSearchCalls++;
+            IReadOnlyList<IReadOnlyList<SearchResult>> results = embeddings.Select(_ => (IReadOnlyList<SearchResult>)[new SearchResult(result, 1)]).ToArray();
+            return Task.FromResult(results);
         }
     }
 

@@ -27,6 +27,13 @@ public interface IBatchMemoryStore : IMemoryStore
 public interface IBatchVectorMemoryStore : IVectorMemoryStore
 {
     Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default);
+    async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchBatchAsync(IReadOnlyList<IReadOnlyList<float>> embeddings, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(embeddings);
+        var results = new List<IReadOnlyList<SearchResult>>(embeddings.Count);
+        foreach (var embedding in embeddings) results.Add(await SearchAsync(embedding, filter, topK, cancellationToken));
+        return results;
+    }
 }
 
 public interface IMemoryHistoryStore : IMemoryStore

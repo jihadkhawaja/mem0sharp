@@ -53,8 +53,18 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
                 event integer NOT NULL,
                 old_memory text NULL,
                 new_memory text NULL,
-                created_at timestamptz NOT NULL
+                created_at timestamptz NOT NULL,
+                updated_at timestamptz NOT NULL,
+                is_deleted boolean NOT NULL DEFAULT false,
+                actor_id text NULL,
+                role text NULL
             );
+            ALTER TABLE {historyTableName} ADD COLUMN IF NOT EXISTS updated_at timestamptz NULL;
+            ALTER TABLE {historyTableName} ADD COLUMN IF NOT EXISTS is_deleted boolean NOT NULL DEFAULT false;
+            ALTER TABLE {historyTableName} ADD COLUMN IF NOT EXISTS actor_id text NULL;
+            ALTER TABLE {historyTableName} ADD COLUMN IF NOT EXISTS role text NULL;
+            UPDATE {historyTableName} SET updated_at = created_at WHERE updated_at IS NULL;
+            ALTER TABLE {historyTableName} ALTER COLUMN updated_at SET NOT NULL;
             CREATE INDEX IF NOT EXISTS "{options.TableName}_history_memory_idx" ON {historyTableName} (memory_id, created_at);
             {indexSql}
             """, cancellationToken);
@@ -124,6 +134,13 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         return results;
     }
 
+    public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchBatchAsync(IReadOnlyList<IReadOnlyList<float>> embeddings, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(embeddings);
+        var searches = embeddings.Select(embedding => SearchAsync(embedding, filter, topK, cancellationToken));
+        return await Task.WhenAll(searches);
+    }
+
     public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -144,20 +161,24 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
     public async Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"INSERT INTO {historyTableName} (id, memory_id, event, old_memory, new_memory, created_at) VALUES ($1, $2, $3, $4, $5, $6)", connection);
+        await using var command = new NpgsqlCommand($"INSERT INTO {historyTableName} (id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", connection);
         command.Parameters.AddWithValue(entry.Id);
         command.Parameters.AddWithValue(entry.MemoryId);
         command.Parameters.AddWithValue((int)entry.Event);
         command.Parameters.AddWithValue((object?)entry.OldMemory ?? DBNull.Value);
         command.Parameters.AddWithValue((object?)entry.NewMemory ?? DBNull.Value);
         command.Parameters.AddWithValue(entry.CreatedAt);
+        command.Parameters.AddWithValue(entry.UpdatedAt);
+        command.Parameters.AddWithValue(entry.IsDeleted);
+        command.Parameters.AddWithValue((object?)entry.ActorId ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)entry.Role ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"SELECT id, memory_id, event, old_memory, new_memory, created_at FROM {historyTableName} WHERE memory_id = $1 ORDER BY created_at, id", connection);
+        await using var command = new NpgsqlCommand($"SELECT id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role FROM {historyTableName} WHERE memory_id = $1 ORDER BY created_at, updated_at, id", connection);
         command.Parameters.AddWithValue(memoryId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var entries = new List<MemoryHistoryEntry>();
@@ -170,7 +191,11 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
                 Event = (MemoryHistoryEvent)reader.GetInt32(2),
                 OldMemory = reader.IsDBNull(3) ? null : reader.GetString(3),
                 NewMemory = reader.IsDBNull(4) ? null : reader.GetString(4),
-                CreatedAt = reader.GetFieldValue<DateTimeOffset>(5)
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
+                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                IsDeleted = reader.GetBoolean(7),
+                ActorId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                Role = reader.IsDBNull(9) ? null : reader.GetString(9)
             });
         }
         return entries;

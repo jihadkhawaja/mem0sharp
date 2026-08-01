@@ -2,6 +2,8 @@
 
 Mem0Sharp targets .NET 10 and exposes the `MemoryService` API for long-term application memory.
 
+For a complete executable version of this guide, run the [getting started sample](../samples/GettingStarted/README.md).
+
 ## Install
 
 Mem0Sharp targets .NET 10. Install the NuGet package for an application:
@@ -32,7 +34,7 @@ dotnet build .\src\Mem0Sharp\Mem0Sharp.csproj
 The parameterless constructor is deliberately useful for tests and offline development. It selects:
 
 - `InMemoryStore` for storage.
-- `LocalEmbeddingGenerator` for deterministic, local embeddings.
+- `LocalEmbeddingGenerator` for deterministic lexical hashing embeddings.
 - `BasicMemoryExtractor` for conversation messages.
 
 ```csharp
@@ -66,6 +68,8 @@ foreach (var result in results)
 ```
 
 `SearchResult.Score` is a cosine-similarity score. Results are ordered from the highest score to the lowest score. The in-memory fallback excludes results below `MemoryOptions.MinimumScore`.
+
+The default local embeddings are intended for deterministic development and test workflows, not as a semantic-quality baseline. Use a model-backed embedding provider for production retrieval.
 
 ## Store conversation memories
 
@@ -133,6 +137,7 @@ Use `HandleAsync` directly when an application already owns its transport.
 
 ## Next steps
 
+- Run the [sample projects](../samples/README.md) for complete local, Ollama, and PostgreSQL workflows.
 - Use [Providers and persistence](providers-and-persistence.md) for model-backed embeddings and PostgreSQL.
 - Use [API reference](api-reference.md) for interfaces, filters, scopes, and custom implementations.
 - Use [Python feature parity](mem0-python-parity.md) to check which Mem0 behaviors and providers are implemented.

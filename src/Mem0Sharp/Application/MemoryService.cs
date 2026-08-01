@@ -117,6 +117,11 @@ public sealed class MemoryService : IMemoryService
             semanticResults = results;
         }
 
+        return await RankSearchResultsAsync(query, searchOptions, semanticResults, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<SearchResult>> RankSearchResultsAsync(string query, MemorySearchOptions searchOptions, IReadOnlyList<SearchResult> semanticResults, CancellationToken cancellationToken)
+    {
         var queryEntities = await entityExtractor.ExtractAsync(query, cancellationToken);
         var entityBoosts = new Dictionary<string, double>(await entityStore.GetMemoryBoostsAsync(queryEntities, cancellationToken), StringComparer.Ordinal);
         if (graphStore is not null)
@@ -143,8 +148,29 @@ public sealed class MemoryService : IMemoryService
     public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemoryFilter? filter = null, int? topK = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(queries);
-        var results = new List<IReadOnlyList<SearchResult>>();
-        foreach (var query in queries) results.Add(await SearchAsync(query, filter, topK, cancellationToken));
+        var materialized = queries.ToArray();
+        foreach (var query in materialized) ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        if (materialized.Length == 0) return [];
+
+        var searchOptions = new MemorySearchOptions { Filter = filter, TopK = topK ?? options.DefaultTopK, Threshold = options.MinimumScore, Hybrid = options.EnableHybridSearch };
+        if (searchOptions.TopK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
+        if (embeddings is IBatchEmbeddingGenerator batchEmbeddings && store is IBatchVectorMemoryStore batchVectorStore)
+        {
+            var queryVectors = await batchEmbeddings.GenerateBatchAsync(materialized, cancellationToken);
+            if (queryVectors.Count != materialized.Length) throw new InvalidOperationException("The embedding provider returned a different number of vectors than input queries.");
+            var semanticBatches = await batchVectorStore.SearchBatchAsync(queryVectors, filter, Math.Max(searchOptions.TopK * 4, 60), cancellationToken);
+            if (semanticBatches.Count != materialized.Length) throw new InvalidOperationException("The vector store returned a different number of result sets than input queries.");
+
+            var batchedResults = new IReadOnlyList<SearchResult>[materialized.Length];
+            for (var index = 0; index < materialized.Length; index++)
+            {
+                batchedResults[index] = await RankSearchResultsAsync(materialized[index], searchOptions, semanticBatches[index], cancellationToken);
+            }
+            return batchedResults;
+        }
+
+        var results = new List<IReadOnlyList<SearchResult>>(materialized.Length);
+        foreach (var query in materialized) results.Add(await SearchAsync(query, searchOptions, cancellationToken));
         return results;
     }
 
@@ -204,7 +230,7 @@ public sealed class MemoryService : IMemoryService
         await indexLock.WaitAsync(cancellationToken);
         try { vectors[id] = updatedVector.ToArray(); }
         finally { indexLock.Release(); }
-        await SaveHistoryAsync(id, MemoryHistoryEvent.Update, existing.Text, updated.Text, cancellationToken);
+        await SaveHistoryAsync(updated, MemoryHistoryEvent.Update, existing.Text, updated.Text, cancellationToken);
         if (update.Text is not null)
         {
             await entityStore.RemoveMemoryAsync(id, cancellationToken);
@@ -225,7 +251,7 @@ public sealed class MemoryService : IMemoryService
         await indexLock.WaitAsync(cancellationToken);
         try { vectors.Remove(id); }
         finally { indexLock.Release(); }
-        if (existing is not null) await SaveHistoryAsync(id, MemoryHistoryEvent.Delete, existing.Text, null, cancellationToken);
+        if (existing is not null) await SaveHistoryAsync(existing, MemoryHistoryEvent.Delete, existing.Text, null, cancellationToken, DateTimeOffset.UtcNow, true);
         await entityStore.RemoveMemoryAsync(id, cancellationToken);
         if (graphStore is not null) await graphStore.RemoveMemoryAsync(id, cancellationToken);
     }
@@ -239,7 +265,7 @@ public sealed class MemoryService : IMemoryService
             foreach (var memory in memories)
             {
                 await RemoveVectorAsync(memory.Id, cancellationToken);
-                await SaveHistoryAsync(memory.Id, MemoryHistoryEvent.Delete, memory.Text, null, cancellationToken);
+                await SaveHistoryAsync(memory, MemoryHistoryEvent.Delete, memory.Text, null, cancellationToken, DateTimeOffset.UtcNow, true);
                 await entityStore.RemoveMemoryAsync(memory.Id, cancellationToken);
                 if (graphStore is not null) await graphStore.RemoveMemoryAsync(memory.Id, cancellationToken);
             }
@@ -320,7 +346,7 @@ public sealed class MemoryService : IMemoryService
             await indexLock.WaitAsync(cancellationToken);
             try { vectors[memory.Id] = record.Embedding.ToArray(); }
             finally { indexLock.Release(); }
-            await SaveHistoryAsync(memory.Id, MemoryHistoryEvent.Add, null, memory.Text, cancellationToken);
+            await SaveHistoryAsync(memory, MemoryHistoryEvent.Add, null, memory.Text, cancellationToken);
             await entityStore.UpsertLinksAsync(await entityExtractor.ExtractAsync(memory.Text, cancellationToken), memory.Id, cancellationToken);
             if (graphStore is not null && graphExtractor is not null) await graphStore.UpsertAsync(await graphExtractor.ExtractAsync(memory.Text, cancellationToken), memory.Id, cancellationToken);
             saved.Add(memory);
@@ -374,17 +400,21 @@ public sealed class MemoryService : IMemoryService
     public Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default) =>
         graphStore?.GetRelationsAsync(query, cancellationToken) ?? Task.FromResult<IReadOnlyList<MemoryRelation>>([]);
 
-    private Task SaveHistoryAsync(string memoryId, MemoryHistoryEvent eventType, string? oldMemory, string? newMemory, CancellationToken cancellationToken)
+    private Task SaveHistoryAsync(Memory memory, MemoryHistoryEvent eventType, string? oldMemory, string? newMemory, CancellationToken cancellationToken, DateTimeOffset? updatedAt = null, bool isDeleted = false)
     {
         if (store is not IMemoryHistoryStore historyStore) return Task.CompletedTask;
         return historyStore.SaveHistoryAsync(new MemoryHistoryEntry
         {
             Id = Guid.NewGuid().ToString("N"),
-            MemoryId = memoryId,
+            MemoryId = memory.Id,
             Event = eventType,
             OldMemory = oldMemory,
             NewMemory = newMemory,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = memory.CreatedAt,
+            UpdatedAt = updatedAt ?? memory.UpdatedAt,
+            IsDeleted = isDeleted,
+            ActorId = memory.Metadata.TryGetValue("actor_id", out var actorId) ? actorId : null,
+            Role = memory.Metadata.TryGetValue("role", out var role) ? role : null
         }, cancellationToken);
     }
 

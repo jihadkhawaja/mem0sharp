@@ -399,3 +399,9 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Local test credentials
+tests/Mem0Sharp.Tests/testsettings.local.yaml
+
+# Local sample credentials
+samples/PostgresOpenAI/sampleconfig.local.yaml
