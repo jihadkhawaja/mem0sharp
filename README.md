@@ -105,9 +105,11 @@ scope: MemoryScope.User);
 
 ## PostgreSQL with pgvector
 
-Install PostgreSQL with the `vector` extension, then initialize a store using the same embedding dimension as your configured `IEmbeddingGenerator`:
+Install PostgreSQL with the `vector` extension and set `MEM0_POSTGRES` to a valid connection string. Then initialize a store using the same embedding dimension as your configured `IEmbeddingGenerator`:
 
 ```csharp
+using Mem0Sharp;
+
 var embeddings = new LocalEmbeddingGenerator(384);
 await using var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
 {
