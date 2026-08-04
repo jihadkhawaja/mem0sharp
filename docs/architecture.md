@@ -17,7 +17,6 @@ flowchart LR
     Intelligence[Memory intelligence] --> Contracts
     Intelligence --> Domain
     Telemetry[Telemetry decorators] --> Contracts
-    Transport[MCP transport] --> Contracts
 ```
 
 Dependencies point toward contracts and domain models. Contracts never depend on application services or concrete infrastructure. `MemoryService` coordinates use cases through interfaces and does not contain provider-specific HTTP or database logic.
@@ -37,7 +36,6 @@ Dependencies point toward contracts and domain models. Contracts never depend on
 | `Intelligence` | Provider-neutral LLM extraction, conflict resolution, procedural memory, graph extraction, and reranking policies. |
 | `Telemetry` | Telemetry decorators and collectors. |
 | `Facades` | Alternative API façades, including the synchronous wrapper. |
-| `Transports` | Protocol adapters such as the MCP JSON-RPC server. |
 
 All public types currently remain in `namespace Mem0Sharp`. Folder names are architectural boundaries, not namespace segments, so this refactor does not require consumer source changes.
 
@@ -56,4 +54,4 @@ The parameterless `MemoryService` path composes deterministic in-memory defaults
 5. Put protocol concerns under `Transports` and cross-cutting decorators under their dedicated folder.
 6. Preserve the public `Mem0Sharp` namespace unless a planned major version explicitly introduces namespace migration.
 
-PostgreSQL is isolated at the source boundary but remains in the main package for compatibility. A future major version can extract it to an optional adapter package after adding shared store contract tests and a documented package migration path.
+PostgreSQL is isolated at the source boundary but remains in the main package for compatibility. MCP hosting is kept in `samples/McpServer` and uses the official `ModelContextProtocol` SDK, leaving the core package independent of protocol hosting dependencies.

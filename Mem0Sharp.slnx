@@ -2,6 +2,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/AgentFrameworkMemory/AgentFrameworkMemory.csproj" />
     <Project Path="samples/GettingStarted/GettingStarted.csproj" />
+    <Project Path="samples/McpServer/McpServer.csproj" />
     <Project Path="samples/MemoryBehaviors/MemoryBehaviors.csproj" />
     <Project Path="samples/Ollama/Ollama.csproj" />
     <Project Path="samples/PostgresOpenAI/PostgresOpenAI.csproj" />

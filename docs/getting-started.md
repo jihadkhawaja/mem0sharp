@@ -151,16 +151,13 @@ var memory = new MemoryService(
 
 ## Expose local MCP tools
 
-`MemoryMcpServer` handles MCP JSON-RPC requests against the same local `IMemoryService`. It exposes add, search, get, update, delete, bulk delete, list-entity, and delete-entity tools without calling a hosted Mem0 service.
+The [`McpServer` sample](../samples/McpServer/README.md) exposes nine local tools over stdio using the official `ModelContextProtocol` .NET SDK. It uses the same local `IMemoryService` without calling a hosted Mem0 service.
 
 ```csharp
-var service = new MemoryService();
-var mcp = new MemoryMcpServer(service);
-
-await mcp.RunAsync(Console.OpenStandardInput(), Console.OpenStandardOutput());
+dotnet run --project .\samples\McpServer\McpServer.csproj
 ```
 
-Use `HandleAsync` directly when an application already owns its transport.
+The sample registers the memory tools with dependency injection and uses the SDK's stdio transport. Add `ModelContextProtocol` to an application-specific host when embedding the same tool pattern in another process.
 
 ## Next steps
 

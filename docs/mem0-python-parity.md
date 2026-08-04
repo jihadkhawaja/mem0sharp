@@ -60,7 +60,7 @@ Status meanings:
 | Python capability | Status | Mem0Sharp state |
 | --- | --- | --- |
 | Telemetry | Complete | Opt-in `IMemoryTelemetry` captures content-free operation events. |
-| MCP integration | Complete | `MemoryMcpServer` exposes nine local JSON-RPC tools and a stream transport. |
+| MCP integration | Complete | The `samples/McpServer` project exposes nine local tools over stdio through the official `ModelContextProtocol` .NET SDK. |
 | Configuration model | Complete | `MemoryServiceConfiguration` composes all native C# providers. |
 | Batch embedding/insertion | Complete | Batch contracts, OpenAI-compatible batch embeddings, local batching, and transactional PostgreSQL batch writes are supported. |
 

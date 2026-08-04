@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "mem0sharp": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/samples/McpServer/McpServer.csproj",
+        "--no-launch-profile",
+        "--property:BaseOutputPath=${workspaceFolder}/artifacts/mcp-server/",
+        "--property:UseAppHost=false"
+      ]
+    }
+  }
+}

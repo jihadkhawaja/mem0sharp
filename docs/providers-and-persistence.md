@@ -2,6 +2,18 @@
 
 Mem0Sharp separates the service API from embeddings, extraction, and storage. This lets the same application code run locally with deterministic components and in production with model-backed embeddings and a persistent database.
 
+## Available providers
+
+| Capability | Built-in providers |
+| --- | --- |
+| Chat completion | OpenAI-compatible APIs, Anthropic Messages, Ollama |
+| Embeddings | Deterministic local, OpenAI-compatible APIs, Ollama |
+| Vector storage | In-memory, SQLite (managed cosine search), PostgreSQL/pgvector, Qdrant |
+| Reranking | LLM, Cohere, ZeroEntropy, local cross-encoder |
+| Entity and graph storage | In-memory, PostgreSQL |
+
+All providers are replaceable through the public contracts. The model adapters use caller-owned `HttpClient` instances; custom providers can target other hosted services or local runtimes without adding an SDK dependency to the core package.
+
 ## Dependency boundary
 
 The library has one direct runtime NuGet dependency: `Npgsql`. It is used only
@@ -156,6 +168,21 @@ Memory-store initialization creates the memory table, a `<TableName>_history` au
 Set `CreateExtension = false` when the database user cannot create extensions and the `vector` extension has already been installed by an administrator.
 
 The table name must be a simple PostgreSQL identifier containing letters, numbers, and underscores, and beginning with a letter or underscore.
+
+## SQLite
+
+`SqliteMemoryStore` persists embeddings as portable BLOBs and implements cosine similarity in managed code. It requires no SQLite vector extension and is suitable for local applications and small to medium datasets where a scan of stored vectors is acceptable:
+
+```csharp
+await using var store = new SqliteMemoryStore("data/mem0sharp.db");
+await store.InitializeAsync();
+
+var memory = new MemoryService(
+    store: store,
+    embeddings: new LocalEmbeddingGenerator(384));
+```
+
+The SQLite memory and history tables use the same normalized column names as the PostgreSQL store, including `text_value`, `user_id`, `metadata`, `created_at`, `expires_at`, `hash_value`, and the explicit history event fields. Metadata is stored as JSON text and embeddings are stored as portable BLOBs because SQLite has no required vector type; cosine similarity is evaluated in managed code. SQLite databases must be initialized with this normalized schema; older JSON-backed schemas are not supported. For large collections or indexed approximate search, use PostgreSQL/pgvector, Qdrant, or a custom `IVectorMemoryStore` backed by a SQLite vector extension.
 
 ## Qdrant
 

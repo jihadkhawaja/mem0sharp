@@ -85,7 +85,7 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 - `IBehaviorAwareMemoryExtractor` optionally adds behavior and persona-aware extraction without changing existing `IMemoryExtractor` implementations.
 - `IMemoryStore` provides basic persistence operations.
 - `IVectorMemoryStore` adds backend similarity search.
-- `InMemoryStore`, `PostgresMemoryStore`, and `QdrantMemoryStore` provide local, SQL/pgvector, and remote vector persistence.
+- `InMemoryStore`, `SqliteMemoryStore`, `PostgresMemoryStore`, and `QdrantMemoryStore` provide local, SQLite managed-cosine, SQL/pgvector, and remote vector persistence.
 - `IBulkMemoryStore` adds efficient filtered bulk deletion.
 - `IMemoryHistoryStore` persists and retrieves the audit trail used by `GetHistoryAsync`.
 - `IBatchEmbeddingGenerator`, `IBatchMemoryStore`, and `IBatchVectorMemoryStore` enable batch pipelines. Batch vector stores can override `SearchBatchAsync`; the default implementation preserves compatibility with a sequential fallback.
@@ -94,7 +94,7 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 - `IMemoryReranker` reranks fused search candidates. Built-in implementations cover LLM scoring, Cohere, ZeroEntropy, and local cross-encoders through `ICrossEncoderScorer`.
 - `IMemoryTelemetry` receives privacy-preserving operation events when configured.
 
-`MemoryServiceConfiguration` composes these providers without any hosted Mem0 dependency. `SynchronousMemoryService` exposes blocking equivalents for applications that cannot use async APIs, including batch search, paging, and graph relation retrieval. `MemoryMcpServer` exposes local JSON-RPC tools over `IMemoryService`.
+`MemoryServiceConfiguration` composes these providers without any hosted Mem0 dependency. `SynchronousMemoryService` exposes blocking equivalents for applications that cannot use async APIs, including batch search, paging, and graph relation retrieval. The `samples/McpServer` project exposes local MCP tools through the official .NET SDK.
 
 The service only requires `IMemoryStore`. If the supplied store does not implement `IVectorMemoryStore`, it falls back to generating and caching vectors in the service process. If it does not implement `IMemoryHistoryStore`, no history events are recorded and `GetHistoryAsync` returns an empty list. These fallbacks are suitable for local development and small datasets; use vector- and history-capable persistent stores for production workloads.
 

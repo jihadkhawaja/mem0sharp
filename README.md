@@ -21,7 +21,7 @@ any external service.
 ## Documentation
 
 - **Start:** [Documentation home](docs/README.md), [getting started](docs/getting-started.md), and [runnable samples](samples/README.md).
-- **Deploy:** [Providers and persistence](docs/providers-and-persistence.md) for Ollama, OpenAI-compatible APIs, PostgreSQL, and Qdrant.
+- **Deploy:** [Providers and persistence](docs/providers-and-persistence.md) for OpenAI-compatible, Anthropic, and Ollama models plus PostgreSQL, Qdrant, and reranking providers.
 - **Reference:** [API reference](docs/api-reference.md) and [Mem0 Python feature parity](docs/mem0-python-parity.md).
 - **Contribute:** [Architecture](docs/architecture.md) and the [contribution guide](CONTRIBUTING.md).
 
@@ -42,7 +42,7 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 
 - Semantic memory search with configurable result limits.
 - Hybrid semantic and BM25 retrieval with explanations and LLM, Cohere, ZeroEntropy, or local cross-encoder reranking.
-- OpenAI-compatible, Anthropic, and Ollama model protocols with local, PostgreSQL/pgvector, and Qdrant vector storage.
+- OpenAI-compatible, Anthropic, and Ollama model protocols with local, SQLite, PostgreSQL/pgvector, and Qdrant vector storage.
 - CRUD operations plus filtered bulk deletion.
 - Persistent `ADD`, `UPDATE`, and `DELETE` history with audit timestamps, deletion state, actor, and role for built-in stores.
 - Scope-aware deduplication and conflict-aware Add/Update/Delete/None decisions.
