@@ -23,6 +23,7 @@ any external service.
 - **Start:** [Documentation home](docs/README.md), [getting started](docs/getting-started.md), and [runnable samples](samples/README.md).
 - **Deploy:** [Providers and persistence](docs/providers-and-persistence.md) for OpenAI-compatible, Anthropic, and Ollama models plus PostgreSQL, Qdrant, and reranking providers.
 - **Reference:** [API reference](docs/api-reference.md) and [Mem0 Python feature parity](docs/mem0-python-parity.md).
+- **Evaluate:** [Evaluation](docs/evaluation.md) for the benchmark harness and measured results across options and memory behaviors.
 - **Contribute:** [Architecture](docs/architecture.md) and the [contribution guide](CONTRIBUTING.md).
 
 ## Dependency stack

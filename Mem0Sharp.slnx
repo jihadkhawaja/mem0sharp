@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/evaluation/">
+    <Project Path="evaluation/Mem0Sharp.Evaluation/Mem0Sharp.Evaluation.csproj" />
+  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/AgentFrameworkMemory/AgentFrameworkMemory.csproj" />
     <Project Path="samples/GettingStarted/GettingStarted.csproj" />

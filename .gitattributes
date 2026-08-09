@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Evaluation raw reports: JSON reports are large (hundreds of KB), store in Git LFS
+evaluation/results/*.json filter=lfs diff=lfs merge=lfs -text
