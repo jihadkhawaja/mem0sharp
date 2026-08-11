@@ -35,6 +35,9 @@ public sealed class TelemetryMemoryService : IMemoryService
     public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemoryFilter? filter = null, int? topK = null, CancellationToken cancellationToken = default) =>
         CaptureAsync("mem0.search_many", () => inner.SearchManyAsync(queries, filter, topK, cancellationToken), cancellationToken: cancellationToken);
 
+    public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemorySearchOptions options, CancellationToken cancellationToken = default) =>
+        CaptureAsync("mem0.search_many", () => inner.SearchManyAsync(queries, options, cancellationToken), new Dictionary<string, object?> { ["top_k"] = options.TopK, ["include_non_factual"] = options.IncludeNonFactual }, cancellationToken);
+
     public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get", () => inner.GetAsync(id, cancellationToken), cancellationToken: cancellationToken);
     public Task<IReadOnlyList<Memory>> GetAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get_all", () => inner.GetAllAsync(filter, cancellationToken), cancellationToken: cancellationToken);
     public Task<MemoryPage> GetPageAsync(MemoryPageOptions options, MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get_page", () => inner.GetPageAsync(options, filter, cancellationToken), cancellationToken: cancellationToken);

@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mem0Sharp\Mem0Sharp.csproj" />
+    <ProjectReference Include="..\..\src\Mem0Sharp.PostgreSQL\Mem0Sharp.PostgreSQL.csproj" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
   <ItemGroup>

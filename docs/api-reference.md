@@ -2,11 +2,12 @@
 
 ## Runtime requirements
 
-Mem0Sharp targets .NET 10 and has one direct runtime NuGet dependency:
-`Npgsql`, used by the PostgreSQL and pgvector stores. The core service,
-in-memory store, deterministic local embeddings, and extension-point
-interfaces do not require additional third-party packages. Model providers
-and persistence backends are replaceable through the interfaces below.
+Mem0Sharp targets .NET 10 and the `Mem0Sharp` package has no runtime package
+dependencies. PostgreSQL and SQLite persistence are distributed separately as
+`Mem0Sharp.PostgreSQL` and `Mem0Sharp.SQLite`; install only the provider a
+deployment needs. The core service, in-memory store, deterministic local
+embeddings, and extension-point interfaces use only .NET 10 and the base class
+libraries.
 
 ## MemoryService
 
@@ -19,6 +20,7 @@ and persistence backends are replaceable through the interfaces below.
 | `AddManyAsync(IEnumerable<string>, ...)` | Deduplicate, batch embed, and save several memories. |
 | `SearchAsync(string, ...)` | Return the most relevant memories for a query. |
 | `SearchManyAsync(IEnumerable<string>, ...)` | Search several queries with the same filter, using batch-capable embedding and vector providers when available. |
+| `SearchManyAsync(IEnumerable<string>, MemorySearchOptions, ...)` | Search several queries with explicit behavior and retrieval policies. |
 | `GetAsync(string)` | Retrieve one memory by ID. |
 | `GetAllAsync(MemoryFilter?)` | List memories, newest updated first. |
 | `GetPageAsync(MemoryPageOptions, MemoryFilter?)` | Return a page plus the total matching count. |
@@ -33,7 +35,7 @@ All methods are asynchronous and accept an optional `CancellationToken`.
 
 ## Models
 
-- `Memory` is the stored record. It contains `Id`, `Text`, `UserId`, optional `AgentId` and `RunId`, `Scope`, `Metadata`, `CreatedAt`, and `UpdatedAt`.
+- `Memory` is the stored record. It contains `Id`, `Text`, `UserId`, optional `AgentId` and `RunId`, `Scope`, `Metadata`, `CreatedAt`, `UpdatedAt`, `Behavior`, and optional `MemoryType` provenance.
 - `MemoryInput` is the extractor output used when creating memories.
 - `Message` contains a conversation `Role` and `Content`.
 - `SearchResult` contains a `Memory` and its similarity `Score`.
@@ -41,7 +43,7 @@ All methods are asynchronous and accept an optional `CancellationToken`.
 - `MemoryHistoryEntry` contains the event type, old and new text, memory ID, event ID, original creation time, event update time, deletion state, actor ID, and role.
 - `MemoryAddOptions` controls identity, scope, inference, procedural memory, expiration, metadata, custom prompts, deduplication, and optional `MemoryBehavior` shaping.
 - `MemoryBehavior` selects `Normal` (the unchanged default), `Dreaming`, `RandomThoughts`, or `PersonalMemory`. Non-normal modes require inference and an `IBehaviorAwareMemoryExtractor` such as `LlmMemoryExtractor`.
-- `MemorySearchOptions` controls filtering, top K, threshold, hybrid scoring, explanations, and reranking.
+- `MemorySearchOptions` controls filtering, top K, threshold, hybrid scoring, explanations, reranking, explicit behavior selection, and `IncludeNonFactual`. Searches default to `MemoryBehavior.Normal`; associative and agent-owned memories require an explicit behavior or `IncludeNonFactual = true`.
 - `MemoryUpdate` supports optional text, metadata, and expiration changes.
 - `MemoryPage` contains paged results and total count.
 - `SearchScoreDetails` separates semantic, keyword, entity/graph, and reranker signals.
@@ -66,6 +68,10 @@ var filter = new MemoryFilter(
 
 The scope is metadata used for filtering; it does not automatically expire memories.
 
+`MemoryFilter` can also constrain `Behavior` and `MemoryType`. Listing and
+deletion include all behaviors unless those fields are supplied; search applies
+the factual-only default described above.
+
 ## Tuning search
 
 `MemoryOptions` controls the service defaults:
@@ -85,9 +91,10 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 - `IBehaviorAwareMemoryExtractor` optionally adds behavior and persona-aware extraction without changing existing `IMemoryExtractor` implementations.
 - `IMemoryStore` provides basic persistence operations.
 - `IVectorMemoryStore` adds backend similarity search.
-- `InMemoryStore`, `SqliteMemoryStore`, `PostgresMemoryStore`, and `QdrantMemoryStore` provide local, SQLite managed-cosine, SQL/pgvector, and remote vector persistence.
+- `InMemoryStore` and `QdrantMemoryStore` are included in core. `SqliteMemoryStore` is provided by `Mem0Sharp.SQLite`; `PostgresMemoryStore`, `PostgresEntityStore`, and `PostgresGraphStore` are provided by `Mem0Sharp.PostgreSQL`.
 - `IBulkMemoryStore` adds efficient filtered bulk deletion.
 - `IMemoryHistoryStore` persists and retrieves the audit trail used by `GetHistoryAsync`.
+- `IAtomicMemoryStore` atomically commits memory rows and their history events for add, update, and delete operations. The built-in in-memory, SQLite, and PostgreSQL stores implement it; custom stores can opt in when their backend supports transactions.
 - `IBatchEmbeddingGenerator`, `IBatchMemoryStore`, and `IBatchVectorMemoryStore` enable batch pipelines. Batch vector stores can override `SearchBatchAsync`; the default implementation preserves compatibility with a sequential fallback.
 - `IMemoryConflictResolver` produces structured memory actions.
 - `IEntityExtractor`/`IEntityStore` and `IGraphMemoryExtractor`/`IGraphMemoryStore` provide relationship memory.
@@ -96,7 +103,7 @@ A vector store such as `PostgresMemoryStore` applies similarity ordering and `to
 
 `MemoryServiceConfiguration` composes these providers without any hosted Mem0 dependency. `SynchronousMemoryService` exposes blocking equivalents for applications that cannot use async APIs, including batch search, paging, and graph relation retrieval. The `samples/McpServer` project exposes local MCP tools through the official .NET SDK.
 
-The service only requires `IMemoryStore`. If the supplied store does not implement `IVectorMemoryStore`, it falls back to generating and caching vectors in the service process. If it does not implement `IMemoryHistoryStore`, no history events are recorded and `GetHistoryAsync` returns an empty list. These fallbacks are suitable for local development and small datasets; use vector- and history-capable persistent stores for production workloads.
+The service only requires `IMemoryStore`. If the supplied store does not implement `IVectorMemoryStore`, it falls back to generating and caching vectors in the service process. If it does not implement `IMemoryHistoryStore`, no history events are recorded and `GetHistoryAsync` returns an empty list. Relationship/entity stores are independent optional adapters; enrichment is prepared before memory writes and partial links are removed on failure, but a custom deployment that needs cross-table atomicity should provide a backend-specific aggregate store.
 
 ## Operational notes
 

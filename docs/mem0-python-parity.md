@@ -17,7 +17,7 @@ Status meanings:
 | Get one / list | Complete | CRUD, paging, expiration visibility, and expression filters are supported. |
 | Update | Complete | Text, metadata, expiration, hash regeneration, entity relinking, graph relinking, and history are supported. |
 | Delete / filtered delete all | Complete | Single and filtered bulk deletion are supported. |
-| History | Complete | In-memory and PostgreSQL stores persist chronological Add, Update, and Delete events with original/event timestamps, deletion state, actor, and role; pgvector integration and legacy-schema migration are tested. |
+| History | Complete | In-memory, SQLite, and PostgreSQL stores persist chronological Add, Update, and Delete events with original/event timestamps, deletion state, actor, and role; built-in atomic stores commit memory rows and history together. |
 | Reset | Complete | `ResetAsync` clears memories, history, vectors, entities, and graph state. |
 | Sync API | Complete | `SynchronousMemoryService` wraps the native async API, including batch search, paging, and graph relation retrieval. |
 
@@ -33,6 +33,7 @@ Status meanings:
 | Entity extraction and boosting | Complete | Built-in extraction, linking, cleanup, boosts, and in-memory/PostgreSQL stores exist. |
 | Reranking | Complete | `LlmReranker`, `CohereReranker`, `ZeroEntropyReranker`, and local `CrossEncoderReranker` paths are included behind `IMemoryReranker`. |
 | Search explanations | Complete | Semantic, keyword, entity/graph, raw, maximum, threshold, and reranker scores are exposed. |
+| Memory provenance and retrieval policy | Complete | `MemoryBehavior` and `MemoryType` persist with each memory; ordinary search is factual-only, with explicit opt-in for associative and agent-owned memories. |
 
 ## Memory intelligence
 
@@ -51,7 +52,7 @@ Status meanings:
 | --- | --- | --- |
 | LLM providers | Complete | OpenAI-compatible, Anthropic Messages, and native Ollama chat protocols cover hosted, routed, and local model families behind `IChatCompletionClient`. |
 | Embedding providers | Complete | Deterministic local, OpenAI-compatible, and native Ollama batch embeddings are included behind `IEmbeddingGenerator`. |
-| Vector stores | Complete | In-memory, PostgreSQL/pgvector, and Qdrant persistence are included; each preserves the public filtering and vector-search contract. |
+| Vector stores | Complete | In-memory, SQLite, PostgreSQL/pgvector, and Qdrant persistence are included; each preserves the public filtering and vector-search contract. |
 | Rerank providers | Complete | LLM, Cohere, ZeroEntropy, and pluggable local cross-encoder reranking are included behind `IMemoryReranker`. |
 | Graph providers | Complete | In-memory and PostgreSQL graph stores are included behind `IGraphMemoryStore`. |
 
@@ -63,6 +64,7 @@ Status meanings:
 | MCP integration | Complete | The `samples/McpServer` project exposes nine local tools over stdio through the official `ModelContextProtocol` .NET SDK. |
 | Configuration model | Complete | `MemoryServiceConfiguration` composes all native C# providers. |
 | Batch embedding/insertion | Complete | Batch contracts, OpenAI-compatible batch embeddings, local batching, and transactional PostgreSQL batch writes are supported. |
+| Atomic memory/history writes | Complete | `IAtomicMemoryStore` is implemented by the built-in in-memory, SQLite, and PostgreSQL stores and covered by rollback tests. |
 
 ## Implementation order
 

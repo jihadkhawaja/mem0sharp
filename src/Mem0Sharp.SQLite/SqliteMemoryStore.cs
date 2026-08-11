@@ -5,10 +5,10 @@ using Microsoft.Data.Sqlite;
 
 namespace Mem0Sharp;
 
-public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IMemoryHistoryStore, IResettableMemoryStore, IAsyncDisposable
+public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IAtomicMemoryStore, IResettableMemoryStore, IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string MemoryColumns = "id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value";
+    private const string MemoryColumns = "id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type";
     private const string HistoryColumns = "id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role";
     private readonly string connectionString;
 
@@ -38,7 +38,9 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 expires_at TEXT NULL,
-                hash_value TEXT NOT NULL DEFAULT ''
+                hash_value TEXT NOT NULL DEFAULT '',
+                behavior INTEGER NOT NULL DEFAULT 0,
+                memory_type TEXT NULL
             );
             CREATE TABLE IF NOT EXISTS memory_history (
                 id TEXT PRIMARY KEY,
@@ -56,6 +58,9 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
             CREATE INDEX IF NOT EXISTS memories_updated_at_idx ON memories(updated_at DESC);
             CREATE INDEX IF NOT EXISTS memory_history_memory_idx ON memory_history(memory_id, created_at);
             """, cancellationToken);
+
+        await EnsureColumnAsync(connection, transaction, "memories", "behavior", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(connection, transaction, "memories", "memory_type", "TEXT NULL", cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
@@ -84,6 +89,50 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        foreach (var record in records)
+        {
+            if (record.Embedding is not null) ValidateEmbedding(record.Embedding);
+        }
+        if (records.Count == 0) return;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var record in records)
+        {
+            var embedding = record.Embedding is null ? null : SerializeEmbedding(record.Embedding);
+            await SaveMemoryAsync(connection, transaction, record.Memory, embedding, cancellationToken);
+            await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry history, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await DeleteCoreAsync(connection, transaction, id, cancellationToken);
+        await SaveHistoryAsync(connection, transaction, history, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        if (records.Count == 0) return;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var record in records)
+        {
+            await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
+            await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
     {
         ValidateEmbedding(embedding);
@@ -99,7 +148,7 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         {
             var memory = ReadMemory(reader);
             if (!MemoryFilterEvaluator.Matches(memory, filter)) continue;
-            var vector = DeserializeEmbedding((byte[])reader[11]);
+            var vector = DeserializeEmbedding((byte[])reader[13]);
             if (vector.Count != embedding.Count) throw new InvalidDataException("SQLite contains an embedding with a different dimension than the query.");
             candidates.Add((memory, vector));
         }
@@ -134,10 +183,7 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
     public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM memories WHERE id = $id";
-        command.Parameters.AddWithValue("$id", id);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await DeleteCoreAsync(connection, null, id, cancellationToken);
     }
 
     public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
@@ -206,13 +252,22 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         await SaveMemoryAsync(connection, null, memory, SerializeEmbedding(embedding), cancellationToken);
     }
 
+    private static async Task DeleteCoreAsync(SqliteConnection connection, SqliteTransaction? transaction, string id, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM memories WHERE id = $id";
+        command.Parameters.AddWithValue("$id", id);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task SaveMemoryAsync(SqliteConnection connection, SqliteTransaction? transaction, Memory memory, byte[]? embedding, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO memories (id, text_value, user_id, agent_id, run_id, scope, metadata, embedding, created_at, updated_at, expires_at, hash_value)
-            VALUES ($id, $text_value, $user_id, $agent_id, $run_id, $scope, $metadata, $embedding, $created_at, $updated_at, $expires_at, $hash_value)
+            INSERT INTO memories (id, text_value, user_id, agent_id, run_id, scope, metadata, embedding, created_at, updated_at, expires_at, hash_value, behavior, memory_type)
+            VALUES ($id, $text_value, $user_id, $agent_id, $run_id, $scope, $metadata, $embedding, $created_at, $updated_at, $expires_at, $hash_value, $behavior, $memory_type)
             ON CONFLICT(id) DO UPDATE SET
                 text_value = excluded.text_value,
                 user_id = excluded.user_id,
@@ -224,7 +279,9 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at,
                 expires_at = excluded.expires_at,
-                hash_value = excluded.hash_value
+                hash_value = excluded.hash_value,
+                behavior = excluded.behavior,
+                memory_type = excluded.memory_type
             """;
         command.Parameters.AddWithValue("$id", memory.Id);
         command.Parameters.AddWithValue("$text_value", memory.Text);
@@ -238,6 +295,8 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         command.Parameters.AddWithValue("$updated_at", FormatTimestamp(memory.UpdatedAt));
         command.Parameters.AddWithValue("$expires_at", (object?)(memory.ExpiresAt is null ? null : FormatTimestamp(memory.ExpiresAt.Value)) ?? DBNull.Value);
         command.Parameters.AddWithValue("$hash_value", memory.Hash);
+        command.Parameters.AddWithValue("$behavior", (int)memory.Behavior);
+        command.Parameters.AddWithValue("$memory_type", (object?)memory.MemoryType ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -274,7 +333,9 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         CreatedAt = ParseTimestamp(reader.GetString(7)),
         UpdatedAt = ParseTimestamp(reader.GetString(8)),
         ExpiresAt = reader.IsDBNull(9) ? null : ParseTimestamp(reader.GetString(9)),
-        Hash = reader.GetString(10)
+        Hash = reader.GetString(10),
+        Behavior = reader.IsDBNull(11) ? MemoryBehavior.Normal : (MemoryBehavior)reader.GetInt32(11),
+        MemoryType = reader.IsDBNull(12) ? null : reader.GetString(12)
     };
 
     private static MemoryHistoryEntry ReadHistory(SqliteDataReader reader) => new()
@@ -297,6 +358,31 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         command.Transaction = transaction;
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureColumnAsync(SqliteConnection connection, SqliteTransaction transaction, string tableName, string columnName, string definition, CancellationToken cancellationToken)
+    {
+        var exists = false;
+        await using (var columnsCommand = connection.CreateCommand())
+        {
+            columnsCommand.Transaction = transaction;
+            columnsCommand.CommandText = $"PRAGMA table_info({tableName})";
+            await using var reader = await columnsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+        if (exists) return;
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.Transaction = transaction;
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition}";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static void ValidateBatch(IReadOnlyList<MemoryVectorRecord> records)

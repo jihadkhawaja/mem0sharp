@@ -13,6 +13,8 @@ internal static class MemoryFilterEvaluator
             (filter.AgentId is null || memory.AgentId == filter.AgentId) &&
             (filter.RunId is null || memory.RunId == filter.RunId) &&
             (filter.Scope is null || memory.Scope == filter.Scope) &&
+            (filter.Behavior is null || memory.Behavior == filter.Behavior) &&
+            (filter.MemoryType is null || memory.MemoryType == filter.MemoryType) &&
             (filter.Metadata is null || MatchesExpression(memory.Metadata, filter.Metadata));
     }
 

@@ -24,7 +24,13 @@ internal sealed record CategoryMetrics
     public int Questions { get; init; }
     public int Correct { get; init; }
     public double Accuracy => Questions == 0 ? 0 : (double)Correct / Questions;
+    public double? AccuracyLower95 { get; init; }
+    public double? AccuracyUpper95 { get; init; }
+    public int RetrievalQuestions { get; init; }
+    public int RetrievalHits { get; init; }
     public double RetrievalHitRate { get; init; }
+    public double? RetrievalHitRateLower95 { get; init; }
+    public double? RetrievalHitRateUpper95 { get; init; }
 }
 
 internal sealed record ScenarioReport
@@ -37,9 +43,15 @@ internal sealed record ScenarioReport
     public int Judged { get; init; }
     public int Correct { get; init; }
     public double? Accuracy => Judged == 0 ? null : (double)Correct / Judged;
+    public double? AccuracyLower95 { get; init; }
+    public double? AccuracyUpper95 { get; init; }
     public double? MeanF1 { get; init; }
     public double? MeanBleu1 { get; init; }
+    public int RetrievalQuestions { get; init; }
+    public int RetrievalHits { get; init; }
     public double RetrievalHitRate { get; init; }
+    public double? RetrievalHitRateLower95 { get; init; }
+    public double? RetrievalHitRateUpper95 { get; init; }
     public double MeanSearchLatencyMs { get; init; }
     public IReadOnlyList<CategoryMetrics> Categories { get; init; } = [];
     public IReadOnlyList<QuestionResult> Results { get; init; } = [];
@@ -54,5 +66,9 @@ internal sealed record EvaluationReport
     public string? EmbeddingModel { get; init; }
     public string? JudgeModel { get; init; }
     public required string Store { get; init; }
+    public required string Dataset { get; init; }
+    public int ConversationCount { get; init; }
+    public int QuestionCount { get; init; }
+    public bool SyntheticDataset { get; init; }
     public required IReadOnlyList<ScenarioReport> ScenarioReports { get; init; }
 }

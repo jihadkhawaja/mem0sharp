@@ -1,0 +1,35 @@
+{
+  "name": "Example project dataset",
+  "conversations": [
+    {
+      "id": "project-1",
+      "speakerA": "Alex",
+      "speakerB": "Sam",
+      "sessions": [
+        {
+          "date": "2026-01-15",
+          "turns": [
+            {
+              "speaker": "Alex",
+              "text": "I prefer concise deployment notes and PostgreSQL for production."
+            },
+            {
+              "speaker": "Sam",
+              "text": "I will keep that in mind for the next release."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "project-1-sh-1",
+      "conversationId": "project-1",
+      "category": "single-hop",
+      "question": "Which database does Alex prefer for production?",
+      "expectedAnswer": "PostgreSQL.",
+      "evidence": ["PostgreSQL"]
+    }
+  ]
+}

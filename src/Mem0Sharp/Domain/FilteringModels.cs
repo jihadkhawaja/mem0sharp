@@ -6,7 +6,9 @@ public sealed record MemoryFilter(
     string? RunId = null,
     MemoryScope? Scope = null,
     FilterExpression? Metadata = null,
-    bool IncludeExpired = false);
+    bool IncludeExpired = false,
+    MemoryBehavior? Behavior = null,
+    string? MemoryType = null);
 
 public enum FilterOperator
 {

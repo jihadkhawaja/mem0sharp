@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Mem0Sharp;
 
-public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IMemoryHistoryStore, IResettableMemoryStore, IAsyncDisposable
+public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IAtomicMemoryStore, IResettableMemoryStore, IAsyncDisposable
 {
     private static readonly Regex IdentifierPattern = new("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly PostgresMemoryStoreOptions options;
@@ -42,10 +42,14 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
                 created_at timestamptz NOT NULL,
                 updated_at timestamptz NOT NULL,
                 expires_at timestamptz NULL,
-                hash_value text NOT NULL DEFAULT ''
+                hash_value text NOT NULL DEFAULT '',
+                behavior integer NOT NULL DEFAULT 0,
+                memory_type text NULL
             );
             ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS expires_at timestamptz NULL;
             ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS hash_value text NOT NULL DEFAULT '';
+            ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS behavior integer NOT NULL DEFAULT 0;
+            ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS memory_type text NULL;
             CREATE INDEX IF NOT EXISTS "{options.TableName}_user_idx" ON {tableName} (user_id);
             CREATE TABLE IF NOT EXISTS {historyTableName} (
                 id text PRIMARY KEY,
@@ -93,10 +97,54 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        foreach (var record in records)
+        {
+            if (record.Embedding is not null && record.Embedding.Count != options.EmbeddingDimensions)
+                throw new ArgumentException("Embedding dimensions do not match the PostgreSQL vector column.", nameof(records));
+        }
+        if (records.Count == 0) return;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var record in records)
+        {
+            await SaveCoreAsync(connection, transaction, record.Memory, record.Embedding, cancellationToken);
+            await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry history, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await DeleteCoreAsync(connection, transaction, id, cancellationToken);
+        await SaveHistoryCoreAsync(connection, transaction, history, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        if (records.Count == 0) return;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var record in records)
+        {
+            await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
+            await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"SELECT id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value FROM {tableName} WHERE id = $1", connection);
+        await using var command = new NpgsqlCommand($"SELECT id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type FROM {tableName} WHERE id = $1", connection);
         command.Parameters.AddWithValue(id);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadMemory(reader) : null;
@@ -106,7 +154,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         var (where, parameters) = BuildFilter(filter);
-        await using var command = new NpgsqlCommand($"SELECT id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value FROM {tableName} {where} ORDER BY updated_at DESC", connection);
+        await using var command = new NpgsqlCommand($"SELECT id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type FROM {tableName} {where} ORDER BY updated_at DESC", connection);
         AddParameters(command, parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) yield return ReadMemory(reader);
@@ -120,7 +168,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         var (where, parameters) = BuildFilter(filter, "m.", 2);
         var embeddingCondition = string.IsNullOrEmpty(where) ? "WHERE m.embedding IS NOT NULL" : $"{where} AND m.embedding IS NOT NULL";
         var topKParameter = parameters.Count + 2;
-        await using var command = new NpgsqlCommand($"SELECT m.id, m.text_value, m.user_id, m.agent_id, m.run_id, m.scope, m.metadata, m.created_at, m.updated_at, m.expires_at, m.hash_value, 1 - (m.embedding <=> $1::vector) AS score FROM {tableName} m {embeddingCondition} ORDER BY m.embedding <=> $1::vector LIMIT ${topKParameter}", connection);
+        await using var command = new NpgsqlCommand($"SELECT m.id, m.text_value, m.user_id, m.agent_id, m.run_id, m.scope, m.metadata, m.created_at, m.updated_at, m.expires_at, m.hash_value, m.behavior, m.memory_type, 1 - (m.embedding <=> $1::vector) AS score FROM {tableName} m {embeddingCondition} ORDER BY m.embedding <=> $1::vector LIMIT ${topKParameter}", connection);
         command.Parameters.AddWithValue(ToVectorLiteral(embedding));
         AddParameters(command, parameters);
         command.Parameters.AddWithValue(topK);
@@ -128,7 +176,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var score = reader.GetDouble(11);
+            var score = reader.GetDouble(13);
             results.Add(new SearchResult(ReadMemory(reader), score, new SearchScoreDetails(score)));
         }
         return results;
@@ -144,9 +192,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
     public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"DELETE FROM {tableName} WHERE id = $1", connection);
-        command.Parameters.AddWithValue(id);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await DeleteCoreAsync(connection, null, id, cancellationToken);
     }
 
     public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
@@ -161,7 +207,12 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
     public async Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"INSERT INTO {historyTableName} (id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", connection);
+        await SaveHistoryCoreAsync(connection, null, entry, cancellationToken);
+    }
+
+    private async Task SaveHistoryCoreAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, MemoryHistoryEntry entry, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"INSERT INTO {historyTableName} (id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", connection, transaction);
         command.Parameters.AddWithValue(entry.Id);
         command.Parameters.AddWithValue(entry.MemoryId);
         command.Parameters.AddWithValue((int)entry.Event);
@@ -218,9 +269,9 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
     private async Task SaveCoreAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, Memory memory, IReadOnlyList<float>? embedding, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand($"""
-            INSERT INTO {tableName} (id, text_value, user_id, agent_id, run_id, scope, metadata, embedding, created_at, updated_at, expires_at, hash_value)
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::vector, $9, $10, $11, $12)
-            ON CONFLICT (id) DO UPDATE SET text_value = EXCLUDED.text_value, user_id = EXCLUDED.user_id, agent_id = EXCLUDED.agent_id, run_id = EXCLUDED.run_id, scope = EXCLUDED.scope, metadata = EXCLUDED.metadata, embedding = COALESCE(EXCLUDED.embedding, {tableName}.embedding), updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at, hash_value = EXCLUDED.hash_value
+            INSERT INTO {tableName} (id, text_value, user_id, agent_id, run_id, scope, metadata, embedding, created_at, updated_at, expires_at, hash_value, behavior, memory_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::vector, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (id) DO UPDATE SET text_value = EXCLUDED.text_value, user_id = EXCLUDED.user_id, agent_id = EXCLUDED.agent_id, run_id = EXCLUDED.run_id, scope = EXCLUDED.scope, metadata = EXCLUDED.metadata, embedding = COALESCE(EXCLUDED.embedding, {tableName}.embedding), updated_at = EXCLUDED.updated_at, expires_at = EXCLUDED.expires_at, hash_value = EXCLUDED.hash_value, behavior = EXCLUDED.behavior, memory_type = EXCLUDED.memory_type
             """, connection, transaction);
         command.Parameters.AddWithValue(memory.Id);
         command.Parameters.AddWithValue(memory.Text);
@@ -234,6 +285,15 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         command.Parameters.AddWithValue(memory.UpdatedAt);
         command.Parameters.AddWithValue((object?)memory.ExpiresAt ?? DBNull.Value);
         command.Parameters.AddWithValue(memory.Hash);
+        command.Parameters.AddWithValue((int)memory.Behavior);
+        command.Parameters.AddWithValue((object?)memory.MemoryType ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task DeleteCoreAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string id, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"DELETE FROM {tableName} WHERE id = $1", connection, transaction);
+        command.Parameters.AddWithValue(id);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -252,7 +312,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
 
     private static Memory ReadMemory(NpgsqlDataReader reader) => new()
     {
-        Id = reader.GetString(0), Text = reader.GetString(1), UserId = reader.GetString(2), AgentId = reader.IsDBNull(3) ? null : reader.GetString(3), RunId = reader.IsDBNull(4) ? null : reader.GetString(4), Scope = (MemoryScope)reader.GetInt32(5), Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(6)) ?? new(), CreatedAt = reader.GetFieldValue<DateTimeOffset>(7), UpdatedAt = reader.GetFieldValue<DateTimeOffset>(8), ExpiresAt = reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9), Hash = reader.GetString(10)
+        Id = reader.GetString(0), Text = reader.GetString(1), UserId = reader.GetString(2), AgentId = reader.IsDBNull(3) ? null : reader.GetString(3), RunId = reader.IsDBNull(4) ? null : reader.GetString(4), Scope = (MemoryScope)reader.GetInt32(5), Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(6)) ?? new(), CreatedAt = reader.GetFieldValue<DateTimeOffset>(7), UpdatedAt = reader.GetFieldValue<DateTimeOffset>(8), ExpiresAt = reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9), Hash = reader.GetString(10), Behavior = reader.IsDBNull(11) ? MemoryBehavior.Normal : (MemoryBehavior)reader.GetInt32(11), MemoryType = reader.IsDBNull(12) ? null : reader.GetString(12)
     };
 
     private static (string Where, List<(string Name, object Value)> Parameters) BuildFilter(MemoryFilter? filter, string prefix = "", int startIndex = 1)
@@ -263,6 +323,8 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         AddFilter(filter?.AgentId, $"{prefix}agent_id", "agent_id", conditions, parameters, startIndex);
         AddFilter(filter?.RunId, $"{prefix}run_id", "run_id", conditions, parameters, startIndex);
         if (filter?.Scope is not null) { conditions.Add($"{prefix}scope = ${startIndex + parameters.Count}"); parameters.Add(("scope", (int)filter.Scope.Value)); }
+        if (filter?.Behavior is not null) { conditions.Add($"{prefix}behavior = ${startIndex + parameters.Count}"); parameters.Add(("behavior", (int)filter.Behavior.Value)); }
+        AddFilter(filter?.MemoryType, $"{prefix}memory_type", "memory_type", conditions, parameters, startIndex);
         if (filter?.IncludeExpired != true) conditions.Add($"({prefix}expires_at IS NULL OR {prefix}expires_at > CURRENT_TIMESTAMP)");
         if (filter?.Metadata is not null) conditions.Add(BuildMetadataFilter(filter.Metadata, prefix, startIndex, parameters));
         return (conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions), parameters);

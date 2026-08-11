@@ -12,15 +12,22 @@ Mem0Sharp targets .NET 10. Install the NuGet package for an application:
 dotnet add package Mem0Sharp
 ```
 
-The library has one direct runtime package dependency, `Npgsql`, for its
-PostgreSQL and pgvector stores. The default in-memory path uses only .NET 10
-and the base class libraries. It does not require an AI SDK, an ORM, or a
-vector database package.
+The `Mem0Sharp` package has no runtime package dependencies. The default
+in-memory path uses only .NET 10 and the base class libraries. Install
+`Mem0Sharp.PostgreSQL` or `Mem0Sharp.SQLite` only when the application needs
+those persistence providers; they carry their own database dependencies.
 
 Reference the project instead when developing against a local checkout:
 
 ```powershell
 dotnet add .\src\YourApp\YourApp.csproj reference .\src\Mem0Sharp\Mem0Sharp.csproj
+```
+
+Optional provider packages:
+
+```powershell
+dotnet add package Mem0Sharp.PostgreSQL
+dotnet add package Mem0Sharp.SQLite
 ```
 
 The package includes the PostgreSQL integration. Build the library with:
@@ -68,6 +75,11 @@ foreach (var result in results)
 ```
 
 `SearchResult.Score` is a cosine-similarity score. Results are ordered from the highest score to the lowest score. The in-memory fallback excludes results below `MemoryOptions.MinimumScore`.
+
+Mem0Sharp stores the originating `MemoryBehavior` and optional `MemoryType` on
+each record. Searches are factual by default and return only
+`MemoryBehavior.Normal`; use `MemorySearchOptions { IncludeNonFactual = true }`
+or set `Behavior` to retrieve associative, personal, or procedural memories.
 
 The default local embeddings are intended for deterministic development and test workflows, not as a semantic-quality baseline. Use a model-backed embedding provider for production retrieval.
 

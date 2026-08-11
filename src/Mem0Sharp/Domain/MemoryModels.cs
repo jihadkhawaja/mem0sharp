@@ -20,8 +20,10 @@ public sealed record Memory
     public DateTimeOffset UpdatedAt { get; init; }
     public DateTimeOffset? ExpiresAt { get; init; }
     public string Hash { get; init; } = string.Empty;
+    public MemoryBehavior Behavior { get; init; } = MemoryBehavior.Normal;
+    public string? MemoryType { get; init; }
 }
 
-public sealed record MemoryInput(string Text, MemoryScope Scope = MemoryScope.User, IReadOnlyDictionary<string, string>? Metadata = null, DateTimeOffset? ExpiresAt = null);
+public sealed record MemoryInput(string Text, MemoryScope Scope = MemoryScope.User, IReadOnlyDictionary<string, string>? Metadata = null, DateTimeOffset? ExpiresAt = null, MemoryBehavior Behavior = MemoryBehavior.Normal, string? MemoryType = null);
 
 public sealed record Message(string Role, string Content);

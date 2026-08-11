@@ -18,11 +18,57 @@ public sealed class SqliteMemoryStoreTests
             await connection.OpenAsync();
 
             Assert.Equal(
-                ["id", "text_value", "user_id", "agent_id", "run_id", "scope", "metadata", "embedding", "created_at", "updated_at", "expires_at", "hash_value"],
+                ["id", "text_value", "user_id", "agent_id", "run_id", "scope", "metadata", "embedding", "created_at", "updated_at", "expires_at", "hash_value", "behavior", "memory_type"],
                 await GetColumnsAsync(connection, "memories"));
             Assert.Equal(
                 ["id", "memory_id", "event", "old_memory", "new_memory", "created_at", "updated_at", "is_deleted", "actor_id", "role"],
                 await GetColumnsAsync(connection, "memory_history"));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeMigratesNormalizedTablesCreatedBeforeProvenance()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"mem0sharp-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString()))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE memories (
+                        id TEXT PRIMARY KEY,
+                        text_value TEXT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        agent_id TEXT NULL,
+                        run_id TEXT NULL,
+                        scope INTEGER NOT NULL,
+                        metadata TEXT NOT NULL,
+                        embedding BLOB NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        expires_at TEXT NULL,
+                        hash_value TEXT NOT NULL DEFAULT ''
+                    );
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await using var store = new SqliteMemoryStore(databasePath);
+            await store.InitializeAsync();
+            var memory = Memory("legacy", "alice") with { Behavior = MemoryBehavior.PersonalMemory, MemoryType = "persona" };
+            await store.SaveAsync(memory, [1, 0]);
+
+            var loaded = await store.GetAsync(memory.Id);
+            Assert.NotNull(loaded);
+            Assert.Equal(MemoryBehavior.PersonalMemory, loaded.Behavior);
+            Assert.Equal("persona", loaded.MemoryType);
         }
         finally
         {
@@ -93,6 +139,9 @@ public sealed class SqliteMemoryStoreTests
             var added = await firstService.AddAsync("old preference", new MemoryAddOptions
             {
                 UserId = "alice",
+                Infer = false,
+                Behavior = MemoryBehavior.Dreaming,
+                MemoryType = "association",
                 Metadata = new Dictionary<string, string> { ["source"] = "test" }
             });
             var id = added.Memories[0].Id;
@@ -106,6 +155,8 @@ public sealed class SqliteMemoryStoreTests
             var history = await reopenedService.GetHistoryAsync(id);
 
             Assert.Equal("new preference", memory.Text);
+            Assert.Equal(MemoryBehavior.Dreaming, memory.Behavior);
+            Assert.Equal("association", memory.MemoryType);
             Assert.Equal("test", memory.Metadata["source"]);
             Assert.Collection(
                 history,
@@ -208,6 +259,34 @@ public sealed class SqliteMemoryStoreTests
         }
     }
 
+    [Fact]
+    public async Task AtomicBatchRollsBackMemoriesWhenHistoryWriteFails()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"mem0sharp-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var store = new SqliteMemoryStore(databasePath);
+            await store.InitializeAsync();
+            var first = Memory("first", "alice");
+            var second = Memory("second", "alice");
+            var historyId = Guid.NewGuid().ToString("N");
+
+            await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.SaveBatchWithHistoryAsync([
+                new MemoryWriteRecord(first, [1, 0], History(historyId, first)),
+                new MemoryWriteRecord(second, [0, 1], History(historyId, second))
+            ]));
+
+            Assert.Empty(await store.GetAllAsync().ToListAsync());
+            Assert.Empty(await store.GetHistoryAsync(first.Id));
+            Assert.Empty(await store.GetHistoryAsync(second.Id));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(databasePath);
+        }
+    }
+
     private static Memory Memory(string text, string userId) => new()
     {
         Id = Guid.NewGuid().ToString("N"),
@@ -216,6 +295,16 @@ public sealed class SqliteMemoryStoreTests
         CreatedAt = DateTimeOffset.UtcNow,
         UpdatedAt = DateTimeOffset.UtcNow,
         Hash = text
+    };
+
+    private static MemoryHistoryEntry History(string id, Memory memory) => new()
+    {
+        Id = id,
+        MemoryId = memory.Id,
+        Event = MemoryHistoryEvent.Add,
+        NewMemory = memory.Text,
+        CreatedAt = memory.CreatedAt,
+        UpdatedAt = memory.UpdatedAt
     };
 
     private static async Task<IReadOnlyList<string>> GetColumnsAsync(SqliteConnection connection, string tableName)

@@ -1,10 +1,13 @@
+using System.Text.Json;
 using Mem0Sharp;
 using Mem0Sharp.Evaluation;
 
 var scenarioFilter = new List<string>();
 var selfTest = false;
 var listOnly = false;
+var validateDataset = false;
 var configPath = Path.Combine(AppContext.BaseDirectory, "evalconfig.local.yaml");
+string? datasetPath = null;
 
 for (var index = 0; index < args.Length; index++)
 {
@@ -16,11 +19,17 @@ for (var index = 0; index < args.Length; index++)
         case "--config" when index + 1 < args.Length:
             configPath = args[++index];
             break;
+        case "--dataset" when index + 1 < args.Length:
+            datasetPath = args[++index];
+            break;
         case "--self-test":
             selfTest = true;
             break;
         case "--list":
             listOnly = true;
+            break;
+        case "--validate-dataset":
+            validateDataset = true;
             break;
         default:
             Console.Error.WriteLine($"Unknown argument: {args[index]}");
@@ -46,6 +55,22 @@ if (selected.Count == 0)
 {
     Console.Error.WriteLine("No scenarios matched. Use --list to see available scenarios.");
     return 2;
+}
+
+EvaluationDatasetSnapshot dataset;
+try
+{
+    dataset = EvaluationDataset.LoadSnapshot(datasetPath);
+}
+catch (Exception exception) when (exception is FileNotFoundException or InvalidDataException or JsonException)
+{
+    Console.Error.WriteLine(exception.Message);
+    return 2;
+}
+if (validateDataset)
+{
+    Console.WriteLine($"Valid dataset: {dataset.Name} ({dataset.Conversations.Count} conversations, {dataset.Questions.Count} questions)");
+    return 0;
 }
 if (selfTest)
 {
@@ -97,7 +122,7 @@ foreach (var scenario in selected)
     Console.WriteLine($"[scenario] {scenario.Name}: {scenario.Description}");
     try
     {
-        var runner = new ScenarioRunner(configuration, scenario, provider, llmHelper, selfTest);
+        var runner = new ScenarioRunner(configuration, scenario, provider, llmHelper, selfTest, dataset);
         var report = await runner.RunAsync(CancellationToken.None);
         reports.Add(report);
         var accuracy = report.Accuracy is null ? "n/a (retrieval-only)" : $"{report.Accuracy.Value:P0} ({report.Correct}/{report.Judged})";
@@ -132,6 +157,10 @@ var report_ = new EvaluationReport
     EmbeddingModel = selfTest ? "local-deterministic" : configuration.OpenAi.EmbeddingModel,
     JudgeModel = selfTest ? null : configuration.OpenAi.JudgeModel,
     Store = "PostgreSQL/pgvector",
+    Dataset = dataset.Name,
+    ConversationCount = dataset.Conversations.Count,
+    QuestionCount = dataset.Questions.Count,
+    SyntheticDataset = datasetPath is null,
     ScenarioReports = reports
 };
 
@@ -144,11 +173,13 @@ static void PrintUsage()
 {
     Console.Error.WriteLine("""
         Usage:
-          dotnet run --project evaluation/Mem0Sharp.Evaluation [--scenario name[,name]] [--config path] [--self-test] [--list]
+          dotnet run --project evaluation/Mem0Sharp.Evaluation [--scenario name[,name]] [--config path] [--dataset path] [--validate-dataset] [--self-test] [--list]
 
         Options:
           --scenario   Run only the named scenarios (default: all).
           --config     Path to evalconfig.local.yaml (default: next to the executable).
+          --dataset    Path to a JSON dataset; defaults to the built-in fictional fixture.
+          --validate-dataset  Validate the selected JSON dataset without starting PostgreSQL.
           --self-test  Validate the harness with deterministic local embeddings; no API key needed.
           --list       List available scenarios.
         """);

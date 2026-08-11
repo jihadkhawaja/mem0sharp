@@ -8,7 +8,7 @@ Mem0Sharp separates the service API from embeddings, extraction, and storage. Th
 | --- | --- |
 | Chat completion | OpenAI-compatible APIs, Anthropic Messages, Ollama |
 | Embeddings | Deterministic local, OpenAI-compatible APIs, Ollama |
-| Vector storage | In-memory, SQLite (managed cosine search), PostgreSQL/pgvector, Qdrant |
+| Vector storage | In-memory and Qdrant in core; SQLite and PostgreSQL/pgvector in optional provider packages |
 | Reranking | LLM, Cohere, ZeroEntropy, local cross-encoder |
 | Entity and graph storage | In-memory, PostgreSQL |
 
@@ -16,11 +16,17 @@ All providers are replaceable through the public contracts. The model adapters u
 
 ## Dependency boundary
 
-The library has one direct runtime NuGet dependency: `Npgsql`. It is used only
-by `PostgresMemoryStore`, `PostgresEntityStore`, and `PostgresGraphStore`.
-`InMemoryStore`, `LocalEmbeddingGenerator`, the service API, and the provider
-interfaces use .NET 10 and the base class libraries without additional
-packages.
+The `Mem0Sharp` package has no runtime database dependencies. Install
+`Mem0Sharp.PostgreSQL` for PostgreSQL/pgvector and relationship stores, or
+`Mem0Sharp.SQLite` for the managed-cosine SQLite store. Each provider package
+contains its own database dependencies; `InMemoryStore`,
+`LocalEmbeddingGenerator`, the service API, and the provider interfaces use
+.NET 10 and the base class libraries without external services.
+
+```powershell
+dotnet add package Mem0Sharp.PostgreSQL
+dotnet add package Mem0Sharp.SQLite
+```
 
 `OpenAiCompatibleClient` uses the `HttpClient` provided by .NET. It does not
 introduce an OpenAI SDK dependency, and it can be replaced with custom
@@ -109,6 +115,12 @@ var results = await memory.SearchAsync("editor preferences", new MemorySearchOpt
 
 ## PostgreSQL and pgvector
 
+Install `Mem0Sharp.PostgreSQL` alongside `Mem0Sharp`:
+
+```powershell
+dotnet add package Mem0Sharp.PostgreSQL
+```
+
 `PostgresMemoryStore` persists memory fields and embeddings in PostgreSQL. Install PostgreSQL with the `vector` extension available, then initialize the store once before using it:
 
 PostgreSQL and the `vector` extension are external infrastructure. They are
@@ -171,6 +183,12 @@ The table name must be a simple PostgreSQL identifier containing letters, number
 
 ## SQLite
 
+Install `Mem0Sharp.SQLite` alongside `Mem0Sharp`:
+
+```powershell
+dotnet add package Mem0Sharp.SQLite
+```
+
 `SqliteMemoryStore` persists embeddings as portable BLOBs and implements cosine similarity in managed code. It requires no SQLite vector extension and is suitable for local applications and small to medium datasets where a scan of stored vectors is acceptable:
 
 ```csharp
@@ -182,7 +200,7 @@ var memory = new MemoryService(
     embeddings: new LocalEmbeddingGenerator(384));
 ```
 
-The SQLite memory and history tables use the same normalized column names as the PostgreSQL store, including `text_value`, `user_id`, `metadata`, `created_at`, `expires_at`, `hash_value`, and the explicit history event fields. Metadata is stored as JSON text and embeddings are stored as portable BLOBs because SQLite has no required vector type; cosine similarity is evaluated in managed code. SQLite databases must be initialized with this normalized schema; older JSON-backed schemas are not supported. For large collections or indexed approximate search, use PostgreSQL/pgvector, Qdrant, or a custom `IVectorMemoryStore` backed by a SQLite vector extension.
+The SQLite memory and history tables use the same normalized column names as the PostgreSQL store, including `text_value`, `user_id`, `metadata`, `created_at`, `expires_at`, `hash_value`, `behavior`, `memory_type`, and the explicit history event fields. Metadata is stored as JSON text and embeddings are stored as portable BLOBs because SQLite has no required vector type; cosine similarity is evaluated in managed code. Initialization adds the provenance columns to older normalized Mem0Sharp tables with safe defaults; older JSON-backed schemas are not supported. For large collections or indexed approximate search, use PostgreSQL/pgvector, Qdrant, or a custom `IVectorMemoryStore` backed by a SQLite vector extension.
 
 ## Qdrant
 
@@ -221,7 +239,7 @@ public sealed class MyEmbeddingGenerator : IEmbeddingGenerator
 }
 ```
 
-Implement `IMemoryStore` for CRUD storage. Add `IVectorMemoryStore` when the store can perform similarity search itself; otherwise `MemoryService` uses its local vector cache and scans up to `MaxCandidateCount` memories. Add `IBulkMemoryStore` when filtered deletion can be performed efficiently by the backend. Add `IMemoryHistoryStore` to retain `ADD`, `UPDATE`, and `DELETE` events and support `GetHistoryAsync`.
+Implement `IMemoryStore` for CRUD storage. Add `IVectorMemoryStore` when the store can perform similarity search itself; otherwise `MemoryService` uses its local vector cache and scans up to `MaxCandidateCount` memories. Add `IBulkMemoryStore` when filtered deletion can be performed efficiently by the backend. Add `IMemoryHistoryStore` to retain `ADD`, `UPDATE`, and `DELETE` events and support `GetHistoryAsync`. Add `IAtomicMemoryStore` when the backend can commit memory rows and history events in one transaction; this is the consistency boundary used by the built-in stores.
 
 All custom implementations should honor cancellation tokens and return vectors with a stable dimension.
 

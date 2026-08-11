@@ -14,9 +14,14 @@ Mem0Sharp goes beyond porting Mem0 to .NET. It adds native capabilities such as 
 dotnet add package Mem0Sharp
 ```
 
-Mem0Sharp targets .NET 10. The package has one direct runtime dependency,
-`Npgsql`; the default in-memory configuration does not require PostgreSQL or
-any external service.
+Mem0Sharp targets .NET 10 and is the dependency-free core package. The
+default in-memory configuration does not require a database or any external
+service. Install the optional provider packages when persistence is needed:
+
+```powershell
+dotnet add package Mem0Sharp.PostgreSQL
+dotnet add package Mem0Sharp.SQLite
+```
 
 ## Documentation
 
@@ -28,11 +33,13 @@ any external service.
 
 ## Dependency stack
 
-Mem0Sharp keeps its runtime dependency stack deliberately small: it has one
-direct NuGet dependency, [Npgsql](https://www.nuget.org/packages/Npgsql), for
-the PostgreSQL and pgvector stores. The default in-memory service and the
-provider interfaces use only .NET 10 and the base class libraries; no AI SDK,
-HTTP client package, ORM, or vector database package is required.
+Mem0Sharp keeps the core runtime dependency-free. PostgreSQL and SQLite
+dependencies live in the optional
+[`Mem0Sharp.PostgreSQL`](https://www.nuget.org/packages/Mem0Sharp.PostgreSQL) and
+[`Mem0Sharp.SQLite`](https://www.nuget.org/packages/Mem0Sharp.SQLite) packages.
+The core service, in-memory store, local embeddings, and provider interfaces
+use only .NET 10 and the base class libraries; no AI SDK, HTTP client package,
+ORM, or vector database package is required.
 
 Model access is provider-based. Implement `IChatCompletionClient` and
 `IEmbeddingGenerator` for the model service used by your application, or use
@@ -43,7 +50,7 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 
 - Semantic memory search with configurable result limits.
 - Hybrid semantic and BM25 retrieval with explanations and LLM, Cohere, ZeroEntropy, or local cross-encoder reranking.
-- OpenAI-compatible, Anthropic, and Ollama model protocols with local, SQLite, PostgreSQL/pgvector, and Qdrant vector storage.
+- OpenAI-compatible, Anthropic, and Ollama model protocols with local and Qdrant vector storage in core, plus optional SQLite and PostgreSQL/pgvector provider packages.
 - CRUD operations plus filtered bulk deletion.
 - Persistent `ADD`, `UPDATE`, and `DELETE` history with audit timestamps, deletion state, actor, and role for built-in stores.
 - Scope-aware deduplication and conflict-aware Add/Update/Delete/None decisions.
@@ -54,13 +61,18 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 - User, session, and agent scopes with user, agent, and run filters.
 - Metadata attached to each memory.
 - Zero-dependency in-memory storage for tests and local development.
-- One direct runtime package dependency: `Npgsql`; all other provider boundaries are native .NET abstractions.
+- Dependency-free core package with storage providers distributed separately.
 - Deterministic local embeddings for offline development.
-- PostgreSQL persistence with pgvector and optional HNSW indexing.
+- Optional PostgreSQL persistence with pgvector and HNSW indexing through `Mem0Sharp.PostgreSQL`.
 
 ## Quick start
 
 The default service uses in-memory storage, deterministic lexical hashing embeddings, and basic message extraction. It is a good starting point for development and tests; use model-backed embeddings and persistent storage for production workloads.
+
+Memories retain their originating `MemoryBehavior` and optional `MemoryType`.
+Ordinary searches return factual `Normal` memories by default. Set
+`IncludeNonFactual = true` or select a behavior explicitly when an application
+intends to retrieve dreams, associations, personal memories, or procedures.
 
 ```csharp
 using Mem0Sharp;
@@ -106,6 +118,12 @@ scope: MemoryScope.User);
 
 ## PostgreSQL with pgvector
 
+Install the PostgreSQL provider alongside the core package:
+
+```powershell
+dotnet add package Mem0Sharp.PostgreSQL
+```
+
 Install PostgreSQL with the `vector` extension and set `MEM0_POSTGRES` to a valid connection string. Then initialize a store using the same embedding dimension as your configured `IEmbeddingGenerator`:
 
 ```csharp
@@ -132,6 +150,21 @@ implementations of `IChatCompletionClient` and `IEmbeddingGenerator` when you
 need model-backed extraction or embeddings. Use the built-in local components
 for a fully offline deployment. See [Providers and persistence](docs/providers-and-persistence.md)
 for provider contracts, embedding dimensions, and initialization details.
+
+## SQLite
+
+Install the SQLite provider for a portable local database without a vector
+extension:
+
+```powershell
+dotnet add package Mem0Sharp.SQLite
+```
+
+```csharp
+await using var store = new SqliteMemoryStore("data/mem0sharp.db");
+await store.InitializeAsync();
+var memory = new MemoryService(store, new LocalEmbeddingGenerator(384));
+```
 
 ## Samples
 

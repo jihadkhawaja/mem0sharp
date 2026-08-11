@@ -6,11 +6,11 @@
     <LangVersion>preview</LangVersion>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <PackageId>Mem0Sharp</PackageId>
+    <PackageId>Mem0Sharp.SQLite</PackageId>
     <Version>0.1.6</Version>
     <Authors>mem0sharp contributors</Authors>
-    <Description>Long-term memory for AI applications in .NET with semantic search and replaceable embedding and storage providers.</Description>
-    <PackageTags>ai;memory;agents;rag;semantic-search</PackageTags>
+    <Description>SQLite persistence provider for Mem0Sharp.</Description>
+    <PackageTags>ai;memory;agents;sqlite;mem0sharp</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/jihadkhawaja/mem0sharp</RepositoryUrl>
@@ -18,7 +18,12 @@
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
+    <ProjectReference Include="..\Mem0Sharp\Mem0Sharp.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
     <None Include="..\..\NOTICE" Pack="true" PackagePath="NOTICE" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="LICENSE" />
   </ItemGroup>

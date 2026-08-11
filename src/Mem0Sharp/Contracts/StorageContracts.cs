@@ -24,6 +24,17 @@ public interface IBatchMemoryStore : IMemoryStore
     Task SaveBatchAsync(IReadOnlyList<Memory> memories, CancellationToken cancellationToken = default);
 }
 
+public sealed record MemoryWriteRecord(Memory Memory, IReadOnlyList<float>? Embedding, MemoryHistoryEntry History);
+
+public sealed record MemoryDeleteRecord(Memory Memory, MemoryHistoryEntry History);
+
+public interface IAtomicMemoryStore : IMemoryHistoryStore
+{
+    Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default);
+    Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry history, CancellationToken cancellationToken = default);
+    Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default);
+}
+
 public interface IBatchVectorMemoryStore : IVectorMemoryStore
 {
     Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default);

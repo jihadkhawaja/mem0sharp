@@ -16,7 +16,7 @@
 
 ## Validation
 
-- [ ] `dotnet build .\src\Mem0Sharp\Mem0Sharp.csproj`
+- [ ] `dotnet build .\Mem0Sharp.slnx`
 - [ ] `dotnet test .\tests\Mem0Sharp.Tests\Mem0Sharp.Tests.csproj`
 - [ ] I added or updated tests where needed.
 - [ ] I updated documentation for user-visible changes.

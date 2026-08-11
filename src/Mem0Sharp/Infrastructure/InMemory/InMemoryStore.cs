@@ -2,22 +2,37 @@ using System.Collections.Concurrent;
 
 namespace Mem0Sharp;
 
-public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IMemoryHistoryStore, IResettableMemoryStore
+public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IAtomicMemoryStore, IResettableMemoryStore
 {
     private readonly ConcurrentDictionary<string, Memory> memories = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentQueue<MemoryHistoryEntry>> history = new(StringComparer.Ordinal);
+    private readonly object sync = new();
 
     public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        memories[memory.Id] = memory;
+        lock (sync) memories[memory.Id] = memory;
         return Task.CompletedTask;
     }
 
     public Task SaveBatchAsync(IReadOnlyList<Memory> items, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var memory in items) memories[memory.Id] = memory;
+        lock (sync)
+        {
+            foreach (var memory in items) memories[memory.Id] = memory;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            foreach (var record in records) memories[record.Memory.Id] = record.Memory;
+            foreach (var record in records) SaveHistoryCore(record.History);
+        }
         return Task.CompletedTask;
     }
 
@@ -44,7 +59,18 @@ public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IMemory
     public Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        memories.TryRemove(id, out _);
+        lock (sync) memories.TryRemove(id, out _);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            memories.TryRemove(id, out _);
+            SaveHistoryCore(entry);
+        }
         return Task.CompletedTask;
     }
 
@@ -52,14 +78,28 @@ public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IMemory
     {
         var matching = new List<string>();
         await foreach (var memory in GetAllAsync(filter, cancellationToken)) matching.Add(memory.Id);
-        foreach (var id in matching) memories.TryRemove(id, out _);
+        lock (sync)
+        {
+            foreach (var id in matching) memories.TryRemove(id, out _);
+        }
         return matching.Count;
+    }
+
+    public Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            foreach (var record in records) memories.TryRemove(record.Memory.Id, out _);
+            foreach (var record in records) SaveHistoryCore(record.History);
+        }
+        return Task.CompletedTask;
     }
 
     public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        history.GetOrAdd(entry.MemoryId, static _ => new ConcurrentQueue<MemoryHistoryEntry>()).Enqueue(entry);
+        lock (sync) SaveHistoryCore(entry);
         return Task.CompletedTask;
     }
 
@@ -73,8 +113,13 @@ public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IMemory
     public Task ResetAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        memories.Clear();
-        history.Clear();
+        lock (sync)
+        {
+            memories.Clear();
+            history.Clear();
+        }
         return Task.CompletedTask;
     }
+
+    private void SaveHistoryCore(MemoryHistoryEntry entry) => history.GetOrAdd(entry.MemoryId, static _ => new ConcurrentQueue<MemoryHistoryEntry>()).Enqueue(entry);
 }

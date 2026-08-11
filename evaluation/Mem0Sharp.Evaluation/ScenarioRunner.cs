@@ -11,7 +11,8 @@ internal sealed class ScenarioRunner(
     ScenarioDefinition scenario,
     OpenAiCompatibleClient? provider,
     LlmEvalHelper? llmHelper,
-    bool retrievalOnly)
+    bool retrievalOnly,
+    EvaluationDatasetSnapshot dataset)
 {
     private readonly int topK = Math.Max(1, configuration.Evaluation.TopK);
 
@@ -40,7 +41,7 @@ internal sealed class ScenarioRunner(
 
         // Ingest every conversation session-by-session under a scenario- and
         // conversation-scoped user id so scenarios never contaminate each other.
-        foreach (var conversation in EvaluationDataset.Load())
+        foreach (var conversation in dataset.Conversations)
         {
             foreach (var session in conversation.Sessions)
             {
@@ -69,7 +70,7 @@ internal sealed class ScenarioRunner(
         }
         ingestWatch.Stop();
 
-        var questions = EvaluationDataset.Questions();
+        var questions = dataset.Questions;
         var results = new QuestionResult[questions.Count];
         var gate = new SemaphoreSlim(Math.Max(1, configuration.Evaluation.Concurrency));
         var workers = questions.Select(async (question, index) =>
@@ -116,7 +117,7 @@ internal sealed class ScenarioRunner(
 
     private async Task<QuestionResult> EvaluateQuestionCoreAsync(MemoryService memory, EvalQuestion question, CancellationToken cancellationToken)
     {
-        var conversation = EvaluationDataset.Load().Single(item => item.Id == question.ConversationId);
+        var conversation = dataset.Conversations.Single(item => item.Id == question.ConversationId);
         var filter = new MemoryFilter(UserId: $"eval-{scenario.Name}-{conversation.Id}");
 
         var searchWatch = Stopwatch.StartNew();
@@ -127,7 +128,8 @@ internal sealed class ScenarioRunner(
             Threshold = scenario.Threshold,
             Hybrid = scenario.Hybrid,
             Rerank = scenario.Rerank && !retrievalOnly,
-            Explain = false
+            Explain = false,
+            Behavior = scenario.Behavior
         }, cancellationToken);
         searchWatch.Stop();
 
@@ -178,7 +180,7 @@ internal sealed class ScenarioRunner(
         var judged = results.Where(result => result.Correct.HasValue).ToArray();
         var answerable = results.Where(result => result.Category != EvaluationDataset.CategoryAdversarial).ToArray();
 
-        var categories = EvaluationDataset.Categories.Select(category =>
+        var categories = dataset.Categories.Select(category =>
         {
             var inCategory = results.Where(result => result.Category == category).ToArray();
             var judgedInCategory = inCategory.Where(result => result.Correct.HasValue).ToArray();
@@ -188,6 +190,10 @@ internal sealed class ScenarioRunner(
                 Category = category,
                 Questions = judgedInCategory.Length,
                 Correct = judgedInCategory.Count(result => result.Correct == true),
+                AccuracyLower95 = judgedInCategory.Length == 0 ? null : WilsonInterval(judgedInCategory.Count(result => result.Correct == true), judgedInCategory.Length).Lower,
+                AccuracyUpper95 = judgedInCategory.Length == 0 ? null : WilsonInterval(judgedInCategory.Count(result => result.Correct == true), judgedInCategory.Length).Upper,
+                RetrievalQuestions = answerableInCategory.Length,
+                RetrievalHits = answerableInCategory.Count(result => result.RetrievalHit),
                 RetrievalHitRate = answerableInCategory.Length == 0
                     ? 0
                     : (double)answerableInCategory.Count(result => result.RetrievalHit) / answerableInCategory.Length
@@ -203,14 +209,31 @@ internal sealed class ScenarioRunner(
             Questions = results.Count,
             Judged = judged.Length,
             Correct = judged.Count(result => result.Correct == true),
+            AccuracyLower95 = judged.Length == 0 ? null : WilsonInterval(judged.Count(result => result.Correct == true), judged.Length).Lower,
+            AccuracyUpper95 = judged.Length == 0 ? null : WilsonInterval(judged.Count(result => result.Correct == true), judged.Length).Upper,
             MeanF1 = judged.Length == 0 ? null : judged.Average(result => result.F1 ?? 0),
             MeanBleu1 = judged.Length == 0 ? null : judged.Average(result => result.Bleu1 ?? 0),
+            RetrievalQuestions = answerable.Length,
+            RetrievalHits = answerable.Count(result => result.RetrievalHit),
             RetrievalHitRate = answerable.Length == 0
                 ? 0
                 : (double)answerable.Count(result => result.RetrievalHit) / answerable.Length,
+            RetrievalHitRateLower95 = answerable.Length == 0 ? null : WilsonInterval(answerable.Count(result => result.RetrievalHit), answerable.Length).Lower,
+            RetrievalHitRateUpper95 = answerable.Length == 0 ? null : WilsonInterval(answerable.Count(result => result.RetrievalHit), answerable.Length).Upper,
             MeanSearchLatencyMs = results.Count == 0 ? 0 : results.Average(result => result.SearchLatencyMs),
             Categories = categories,
             Results = results
         };
+    }
+
+    private static (double Lower, double Upper) WilsonInterval(int successes, int trials)
+    {
+        const double z = 1.96;
+        var sampleSize = (double)trials;
+        var proportion = (double)successes / trials;
+        var denominator = 1 + z * z / sampleSize;
+        var center = (proportion + z * z / (2 * sampleSize)) / denominator;
+        var margin = z / denominator * Math.Sqrt(proportion * (1 - proportion) / sampleSize + z * z / (4 * sampleSize * sampleSize));
+        return (Math.Max(0, center - margin), Math.Min(1, center + margin));
     }
 }

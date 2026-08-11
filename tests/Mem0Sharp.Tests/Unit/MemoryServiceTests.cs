@@ -19,6 +19,47 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task FactualSearchExcludesAssociativeMemoriesUnlessRequested()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("Alice prefers dark mode", new MemoryAddOptions { UserId = "alice", Infer = false });
+        var associative = await service.AddAsync("Alice may enjoy nocturnal themes", new MemoryAddOptions
+        {
+            UserId = "alice",
+            Infer = false,
+            Behavior = MemoryBehavior.Dreaming,
+            MemoryType = "association"
+        });
+
+        var factual = await service.SearchAsync("nocturnal themes", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            Threshold = 0
+        });
+        Assert.DoesNotContain(factual, result => result.Memory.Id == Assert.Single(associative.Memories).Id);
+
+        var all = await service.SearchAsync("nocturnal themes", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            Threshold = 0,
+            IncludeNonFactual = true
+        });
+        var result = Assert.Single(all, item => item.Memory.Id == Assert.Single(associative.Memories).Id);
+        Assert.Equal(MemoryBehavior.Dreaming, result.Memory.Behavior);
+        Assert.Equal("association", result.Memory.MemoryType);
+    }
+
+    [Fact]
+    public async Task EnrichmentExtractionFailureDoesNotPersistMemory()
+    {
+        var service = new MemoryService(entityExtractor: new ThrowingEntityExtractor());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddAsync("must not be persisted"));
+
+        Assert.Empty(await service.GetAllAsync(new MemoryFilter(IncludeExpired: true)));
+    }
+
+    [Fact]
     public async Task FiltersDoNotLeakBetweenUsers()
     {
         var service = new MemoryService();
@@ -396,6 +437,12 @@ public sealed class MemoryServiceTests
     {
         public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Raw adds must not invoke the extractor.");
+    }
+
+    private sealed class ThrowingEntityExtractor : IEntityExtractor
+    {
+        public Task<IReadOnlyList<ExtractedEntity>> ExtractAsync(string text, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Entity extraction failed.");
     }
 
     private sealed class ConstantEmbeddingGenerator : IEmbeddingGenerator

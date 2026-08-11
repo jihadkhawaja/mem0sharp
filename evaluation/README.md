@@ -2,6 +2,13 @@
 
 This console application measures how well Mem0Sharp stores and retrieves memories across its options and memory behaviors, using PostgreSQL/pgvector as the database. It follows the ingest → search → answer → judge pipeline used by the LOCOMO benchmark in the [Mem0 evaluation suite](https://github.com/mem0ai/memory-benchmarks), but ships with a self-contained fictional dataset so no download is required.
 
+The built-in fixture is a small regression harness, not a production benchmark.
+Use `--dataset` with the schema in
+[`Mem0Sharp.Evaluation/evaldataset.example.json`](Mem0Sharp.Evaluation/evaldataset.example.json)
+to run a broader or application-specific dataset. Reports include the selected
+dataset size and Wilson 95% question-level intervals; intervals do not capture
+LLM/provider variance.
+
 ## What it measures
 
 The harness runs a matrix of scenarios. Each scenario ingests two multi-session conversations (48 turns total) into fresh PostgreSQL tables, then answers 24 questions per scenario:
@@ -19,6 +26,7 @@ Metrics per scenario:
 - **Mean F1 / BLEU-1** — token-overlap answer-quality metrics between generated and reference answers, standard in memory evaluations.
 - **Retrieval hit rate** — share of answerable questions where at least one expected evidence string appears in the retrieved memories.
 - **Memories stored**, **mean search latency**, and **ingest time**.
+- **Wilson 95% intervals** for accuracy and retrieval hit rate, with the underlying sample counts.
 
 ## Scenarios
 
@@ -78,6 +86,12 @@ dotnet run --project .\evaluation\Mem0Sharp.Evaluation\Mem0Sharp.Evaluation.cspr
 
 # List scenarios
 dotnet run --project .\evaluation\Mem0Sharp.Evaluation\Mem0Sharp.Evaluation.csproj -- --list
+
+# Validate an external dataset without Docker or PostgreSQL
+dotnet run --project .\evaluation\Mem0Sharp.Evaluation\Mem0Sharp.Evaluation.csproj -- --dataset .\evaluation\Mem0Sharp.Evaluation\evaldataset.example.json --validate-dataset
+
+# Run the matrix against an external dataset
+dotnet run --project .\evaluation\Mem0Sharp.Evaluation\Mem0Sharp.Evaluation.csproj -- --dataset .\path\to\dataset.json
 
 # Plumbing check without an API key: deterministic local embeddings, retrieval metrics only
 dotnet run --project .\evaluation\Mem0Sharp.Evaluation\Mem0Sharp.Evaluation.csproj -- --self-test

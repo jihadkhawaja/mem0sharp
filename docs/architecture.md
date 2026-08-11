@@ -1,6 +1,6 @@
 # Architecture
 
-Mem0Sharp uses a pragmatic ports-and-adapters architecture inside one package. The public `Mem0Sharp` namespace remains stable, while the source tree separates domain types, contracts, application orchestration, and replaceable infrastructure.
+Mem0Sharp uses a pragmatic ports-and-adapters architecture across a dependency-free core package and optional provider packages. The public `Mem0Sharp` namespace remains stable, while the source tree separates domain types, contracts, application orchestration, and replaceable infrastructure.
 
 Keeping one assembly preserves compatibility for existing consumers. The folders express ownership and dependency direction without requiring applications to reference several packages for the default experience.
 
@@ -32,12 +32,16 @@ Dependencies point toward contracts and domain models. Contracts never depend on
 | `Infrastructure/Extraction` | Deterministic built-in extraction implementations. |
 | `Infrastructure/Embeddings` | Deterministic local embedding implementations. |
 | `Infrastructure/OpenAI` | OpenAI-compatible HTTP adapters. |
-| `Infrastructure/Postgres` | PostgreSQL and pgvector persistence adapters. |
 | `Intelligence` | Provider-neutral LLM extraction, conflict resolution, procedural memory, graph extraction, and reranking policies. |
 | `Telemetry` | Telemetry decorators and collectors. |
 | `Facades` | Alternative API façades, including the synchronous wrapper. |
+| `src/Mem0Sharp.PostgreSQL` | Optional PostgreSQL/pgvector persistence package and relationship stores. |
+| `src/Mem0Sharp.SQLite` | Optional SQLite persistence package. |
 
-All public types currently remain in `namespace Mem0Sharp`. Folder names are architectural boundaries, not namespace segments, so this refactor does not require consumer source changes.
+All public types currently remain in `namespace Mem0Sharp`. Folder names and
+provider assemblies are architectural boundaries, not namespace segments, so
+this refactor does not require consumer source changes beyond adding the
+provider package reference.
 
 ## Composition
 
@@ -45,13 +49,33 @@ All public types currently remain in `namespace Mem0Sharp`. Folder names are arc
 
 The parameterless `MemoryService` path composes deterministic in-memory defaults for local development. Production applications should compose persistent stores and model providers at their own startup boundary.
 
+## Consistency boundaries
+
+Built-in in-memory, SQLite, and PostgreSQL stores implement `IAtomicMemoryStore`.
+When available, `MemoryService` commits a memory row and its `ADD`, `UPDATE`, or
+`DELETE` history event in the same backend transaction, including filtered bulk
+deletes. Custom stores retain the basic `IMemoryStore` contract and can opt into
+the stronger boundary when their backend supports it.
+
+Entity and graph stores remain independent optional adapters because they may be
+hosted in a different backend. Enrichment is extracted before a memory write;
+link application is idempotent and removes partial links when an adapter fails.
+Deletion removes links before deleting the memory, so a cleanup failure leaves
+the memory available rather than creating references to missing data. A
+deployment requiring cross-database atomicity should compose a backend-specific
+aggregate store instead of relying on distributed transactions.
+
 ## Extension rules
 
 1. Add provider-neutral data to `Domain` and provider-neutral behavior contracts to `Contracts`.
 2. Keep orchestration in `Application`; application code may depend on contracts but not concrete adapters.
-3. Put HTTP, database, filesystem, and vendor SDK code under `Infrastructure`.
+3. Put HTTP and vendor SDK code under core `Infrastructure`; put database adapters in their dedicated provider projects.
 4. Put model-driven memory policies under `Intelligence` when they depend only on provider-neutral contracts.
 5. Put protocol concerns under `Transports` and cross-cutting decorators under their dedicated folder.
 6. Preserve the public `Mem0Sharp` namespace unless a planned major version explicitly introduces namespace migration.
 
-PostgreSQL is isolated at the source boundary but remains in the main package for compatibility. MCP hosting is kept in `samples/McpServer` and uses the official `ModelContextProtocol` SDK, leaving the core package independent of protocol hosting dependencies.
+PostgreSQL and SQLite are isolated in `Mem0Sharp.PostgreSQL` and
+`Mem0Sharp.SQLite`; both reference the core and add only their own storage
+dependencies. MCP hosting is kept in `samples/McpServer` and uses the official
+`ModelContextProtocol` SDK, leaving the core package independent of protocol
+hosting dependencies.

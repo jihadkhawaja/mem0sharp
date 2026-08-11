@@ -1,4 +1,4 @@
-name: Publish NuGet package
+name: Publish Mem0Sharp NuGet packages
 
 on:
   push:
@@ -12,7 +12,6 @@ permissions:
 
 env:
   DOTNET_VERSION: '10.0.x'
-  PROJECT_PATH: src/Mem0Sharp/Mem0Sharp.csproj
   PACKAGE_SOURCE: https://nuget.pkg.github.com/jihadkhawaja/index.json
   NUGET_SOURCE: https://api.nuget.org/v3/index.json
 
@@ -33,7 +32,7 @@ jobs:
         run: dotnet restore Mem0Sharp.slnx
 
       - name: Build
-        run: dotnet build "$PROJECT_PATH" --configuration Release --no-restore
+        run: dotnet build Mem0Sharp.slnx --configuration Release --no-restore
 
       - name: Test
         run: dotnet test tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj --configuration Release --no-restore
@@ -48,7 +47,32 @@ jobs:
           fi
 
       - name: Pack
-        run: dotnet pack "$PROJECT_PATH" --configuration Release --no-build --output ./artifacts/package -p:PackageVersion="${GITHUB_REF_NAME#v}"
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for project in \
+            src/Mem0Sharp/Mem0Sharp.csproj \
+            src/Mem0Sharp.PostgreSQL/Mem0Sharp.PostgreSQL.csproj \
+            src/Mem0Sharp.SQLite/Mem0Sharp.SQLite.csproj; do
+            dotnet pack "$project" \
+              --configuration Release \
+              --no-build \
+              --output ./artifacts/package \
+              -p:Version="$version" \
+              -p:PackageVersion="$version"
+          done
+
+      - name: Verify package versions
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for package in artifacts/package/*.nupkg; do
+            nuspec="$(unzip -p "$package" '*.nuspec' | tr -d '\r')"
+            if ! grep -q "<version>$version</version>" <<< "$nuspec"; then
+              echo "Package $package does not have version $version" >&2
+              exit 1
+            fi
+          done
 
       - name: Publish to GitHub Packages
         run: dotnet nuget push ./artifacts/package/*.nupkg --source "$PACKAGE_SOURCE" --api-key "${{ secrets.GITHUB_TOKEN }}" --skip-duplicate

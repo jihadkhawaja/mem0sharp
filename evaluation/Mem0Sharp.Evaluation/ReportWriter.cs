@@ -30,6 +30,8 @@ internal static class ReportWriter
         if (report.EmbeddingModel is not null) builder.AppendLine($"- Embedding model: {report.EmbeddingModel}");
         if (report.JudgeModel is not null) builder.AppendLine($"- Judge model: {report.JudgeModel}");
         builder.AppendLine($"- Store: {report.Store}");
+        builder.AppendLine($"- Dataset: {report.Dataset} ({report.ConversationCount} conversations, {report.QuestionCount} questions)");
+        builder.AppendLine("- Confidence intervals: Wilson 95% question-level intervals; they do not measure provider or model variance.");
         builder.AppendLine();
 
         builder.AppendLine("## Scenario summary");
@@ -38,27 +40,36 @@ internal static class ReportWriter
         builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- |");
         foreach (var scenario in report.ScenarioReports)
         {
-            var accuracy = scenario.Accuracy is null ? "n/a" : $"{scenario.Accuracy.Value:P0} ({scenario.Correct}/{scenario.Judged})";
+            var accuracy = scenario.Accuracy is null
+                ? "n/a"
+                : $"{scenario.Accuracy.Value:P0} ({scenario.Correct}/{scenario.Judged}; {FormatInterval(scenario.AccuracyLower95, scenario.AccuracyUpper95)})";
             var f1 = scenario.MeanF1 is null ? "n/a" : $"{scenario.MeanF1.Value:F2}";
             var bleu = scenario.MeanBleu1 is null ? "n/a" : $"{scenario.MeanBleu1.Value:F2}";
-            builder.AppendLine($"| {scenario.Name} | {accuracy} | {f1} | {bleu} | {scenario.RetrievalHitRate:P0} | {scenario.MemoriesStored} | {scenario.MeanSearchLatencyMs:F0} | {scenario.IngestSeconds:F1} |");
+            var retrieval = $"{scenario.RetrievalHitRate:P0} ({scenario.RetrievalHits}/{scenario.RetrievalQuestions}; {FormatInterval(scenario.RetrievalHitRateLower95, scenario.RetrievalHitRateUpper95)})";
+            builder.AppendLine($"| {scenario.Name} | {accuracy} | {f1} | {bleu} | {retrieval} | {scenario.MemoriesStored} | {scenario.MeanSearchLatencyMs:F0} | {scenario.IngestSeconds:F1} |");
         }
         builder.AppendLine();
 
         builder.AppendLine("## Accuracy by category");
         builder.AppendLine();
+        var categories = report.ScenarioReports
+            .SelectMany(scenario => scenario.Categories)
+            .Select(category => category.Category)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         builder.Append("| Scenario");
-        foreach (var category in EvaluationDataset.Categories) builder.Append($" | {category}");
+        foreach (var category in categories) builder.Append($" | {category}");
         builder.AppendLine();
         builder.Append("| ---");
-        foreach (var _ in EvaluationDataset.Categories) builder.Append(" | ---");
+        foreach (var _ in categories) builder.Append(" | ---");
         builder.AppendLine();
         foreach (var scenario in report.ScenarioReports)
         {
             builder.Append($"| {scenario.Name}");
-            foreach (var category in scenario.Categories)
+            foreach (var categoryName in categories)
             {
-                builder.Append(category.Questions == 0 ? " | n/a" : $" | {category.Accuracy:P0}");
+                var category = scenario.Categories.SingleOrDefault(item => item.Category == categoryName);
+                builder.Append(category is null || category.Questions == 0 ? " | n/a" : $" | {category.Accuracy:P0}");
             }
             builder.AppendLine();
         }
@@ -90,4 +101,6 @@ internal static class ReportWriter
 
         return builder.ToString();
     }
+
+    private static string FormatInterval(double? lower, double? upper) => lower is null || upper is null ? "n/a" : $"95% CI {lower.Value:P0}-{upper.Value:P0}";
 }
