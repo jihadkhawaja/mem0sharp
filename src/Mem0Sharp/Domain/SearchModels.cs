@@ -32,5 +32,3 @@ public sealed record SearchScoreDetails(
     double Threshold = 0);
 
 public sealed record SearchResult(Memory Memory, double Score, SearchScoreDetails? ScoreDetails = null);
-
-public sealed record MemoryVectorRecord(Memory Memory, IReadOnlyList<float> Embedding);

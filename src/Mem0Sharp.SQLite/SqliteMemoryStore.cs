@@ -1,11 +1,12 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Numerics.Tensors;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Mem0Sharp;
 
-public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IAtomicMemoryStore, IResettableMemoryStore, IAsyncDisposable
+public sealed class SqliteMemoryStore : IMemoryStore, IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string MemoryColumns = "id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type";
@@ -65,14 +66,13 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task SaveAsync(Memory memory, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(Memory memory, IReadOnlyList<float>? embedding = null, CancellationToken cancellationToken = default)
     {
+        if (embedding is not null) ValidateEmbedding(embedding);
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        await SaveMemoryAsync(connection, null, memory, null, cancellationToken);
+        var bytes = embedding is null ? null : SerializeEmbedding(embedding);
+        await SaveMemoryAsync(connection, null, memory, bytes, cancellationToken);
     }
-
-    public Task SaveAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default) =>
-        SaveVectorAsync(memory, embedding, cancellationToken);
 
     public async Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default)
     {
@@ -89,7 +89,7 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    public async Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(records);
         foreach (var record in records)
@@ -104,33 +104,52 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         {
             var embedding = record.Embedding is null ? null : SerializeEmbedding(record.Embedding);
             await SaveMemoryAsync(connection, transaction, record.Memory, embedding, cancellationToken);
-            await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+            if (record.History is not null)
+            {
+                await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+            }
         }
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry history, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string id, MemoryHistoryEntry? history = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         await DeleteCoreAsync(connection, transaction, id, cancellationToken);
-        await SaveHistoryAsync(connection, transaction, history, cancellationToken);
+        if (history is not null)
+        {
+            await SaveHistoryAsync(connection, transaction, history, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, IReadOnlyList<MemoryDeleteRecord>? records = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(records);
-        if (records.Count == 0) return;
-
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
-        foreach (var record in records)
+        if (records is not null)
         {
-            await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
-            await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+            if (records.Count == 0) return 0;
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            foreach (var record in records)
+            {
+                await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
+                await SaveHistoryAsync(connection, transaction, record.History, cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return records.Count;
         }
-        await transaction.CommitAsync(cancellationToken);
+
+        var (where, parameters) = BuildFilter(filter);
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(cancellationToken);
+        await using var command = conn.CreateCommand();
+        command.Transaction = tx;
+        command.CommandText = $"DELETE FROM memories {where}";
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return deleted;
     }
 
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
@@ -139,22 +158,28 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
         if (topK == 0) return [];
 
-        var candidates = new List<(Memory Memory, IReadOnlyList<float> Embedding)>();
+        var queryArray = embedding.ToArray();
+        var (where, parameters) = BuildFilter(filter);
+        var embeddingCondition = string.IsNullOrEmpty(where) ? "WHERE embedding IS NOT NULL" : $"{where} AND embedding IS NOT NULL";
+
+        var candidates = new List<(Memory Memory, float[] Embedding)>();
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT {MemoryColumns}, embedding FROM memories WHERE embedding IS NOT NULL ORDER BY updated_at DESC";
+        command.CommandText = $"SELECT {MemoryColumns}, embedding FROM memories {embeddingCondition} ORDER BY updated_at DESC";
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var memory = ReadMemory(reader);
             if (!MemoryFilterEvaluator.Matches(memory, filter)) continue;
-            var vector = DeserializeEmbedding((byte[])reader[13]);
-            if (vector.Count != embedding.Count) throw new InvalidDataException("SQLite contains an embedding with a different dimension than the query.");
+            var vector = DeserializeEmbeddingArray((byte[])reader[13]);
+            if (vector.Length != queryArray.Length) throw new InvalidDataException("SQLite contains an embedding with a different dimension than the query.");
             candidates.Add((memory, vector));
         }
 
         return candidates
-            .Select(candidate => new SearchResult(candidate.Memory, CosineSimilarity(embedding, candidate.Embedding)))
+            .Select(candidate => new SearchResult(candidate.Memory, (double)TensorPrimitives.CosineSimilarity(queryArray, candidate.Embedding)))
             .OrderByDescending(result => result.Score)
             .Take(topK)
             .ToArray();
@@ -172,38 +197,19 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
 
     public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var memories = await LoadAllAsync(cancellationToken);
-        foreach (var memory in memories)
+        var (where, parameters) = BuildFilter(filter);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {MemoryColumns} FROM memories {where} ORDER BY updated_at DESC";
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var memory = ReadMemory(reader);
             if (MemoryFilterEvaluator.Matches(memory, filter)) yield return memory;
         }
-    }
-
-    public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await DeleteCoreAsync(connection, null, id, cancellationToken);
-    }
-
-    public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
-    {
-        var memories = new List<Memory>();
-        await foreach (var memory in GetAllAsync(filter, cancellationToken)) memories.Add(memory);
-        if (memories.Count == 0) return 0;
-
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
-        foreach (var memory in memories)
-        {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = "DELETE FROM memories WHERE id = $id";
-            command.Parameters.AddWithValue("$id", memory.Id);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        await transaction.CommitAsync(cancellationToken);
-        return memories.Count;
     }
 
     public async Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
@@ -234,22 +240,46 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    private async Task<List<Memory>> LoadAllAsync(CancellationToken cancellationToken)
+    private static (string Where, List<(string Name, object Value)> Parameters) BuildFilter(MemoryFilter? filter, string prefix = "")
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT {MemoryColumns} FROM memories ORDER BY updated_at DESC";
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var memories = new List<Memory>();
-        while (await reader.ReadAsync(cancellationToken)) memories.Add(ReadMemory(reader));
-        return memories;
-    }
-
-    private async Task SaveVectorAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken)
-    {
-        ValidateEmbedding(embedding);
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await SaveMemoryAsync(connection, null, memory, SerializeEmbedding(embedding), cancellationToken);
+        var conditions = new List<string>();
+        var parameters = new List<(string, object)>();
+        if (filter?.UserId is not null)
+        {
+            conditions.Add($"{prefix}user_id = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", filter.UserId));
+        }
+        if (filter?.AgentId is not null)
+        {
+            conditions.Add($"{prefix}agent_id = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", filter.AgentId));
+        }
+        if (filter?.RunId is not null)
+        {
+            conditions.Add($"{prefix}run_id = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", filter.RunId));
+        }
+        if (filter?.Scope is not null)
+        {
+            conditions.Add($"{prefix}scope = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", (int)filter.Scope.Value));
+        }
+        if (filter?.Behavior is not null)
+        {
+            conditions.Add($"{prefix}behavior = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", (int)filter.Behavior.Value));
+        }
+        if (filter?.MemoryType is not null)
+        {
+            conditions.Add($"{prefix}memory_type = $p{parameters.Count}");
+            parameters.Add(($"$p{parameters.Count}", filter.MemoryType));
+        }
+        if (filter?.IncludeExpired != true)
+        {
+            conditions.Add($"({prefix}expires_at IS NULL OR {prefix}expires_at > $p{parameters.Count})");
+            parameters.Add(($"$p{parameters.Count}", DateTimeOffset.UtcNow.ToString("O")));
+        }
+        return (conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions), parameters);
     }
 
     private static async Task DeleteCoreAsync(SqliteConnection connection, SqliteTransaction? transaction, string id, CancellationToken cancellationToken)
@@ -409,26 +439,12 @@ public sealed class SqliteMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStor
         return bytes;
     }
 
-    private static IReadOnlyList<float> DeserializeEmbedding(byte[] bytes)
+    private static float[] DeserializeEmbeddingArray(byte[] bytes)
     {
         if (bytes.Length == 0 || bytes.Length % sizeof(float) != 0) throw new InvalidDataException("SQLite contains an invalid embedding blob.");
         var embedding = new float[bytes.Length / sizeof(float)];
         for (var index = 0; index < embedding.Length; index++) embedding[index] = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(index * sizeof(float))));
         return embedding;
-    }
-
-    private static double CosineSimilarity(IReadOnlyList<float> left, IReadOnlyList<float> right)
-    {
-        double dot = 0;
-        double leftMagnitude = 0;
-        double rightMagnitude = 0;
-        for (var index = 0; index < left.Count; index++)
-        {
-            dot += left[index] * right[index];
-            leftMagnitude += left[index] * left[index];
-            rightMagnitude += right[index] * right[index];
-        }
-        return leftMagnitude == 0 || rightMagnitude == 0 ? 0 : dot / (Math.Sqrt(leftMagnitude) * Math.Sqrt(rightMagnitude));
     }
 
     private static string FormatTimestamp(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);

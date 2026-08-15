@@ -1,7 +1,7 @@
 # Evaluation
 
 The committed fixture is intentionally a small harness validation set: two
-fictional conversations and 24 questions. It is useful for regression checks
+fictional conversations and 22 questions. It is useful for regression checks
 and comparing configuration tradeoffs, but it is not evidence of production
 benchmark performance. Generated reports identify the dataset and include
 Wilson 95% question-level intervals; those intervals describe sampling
@@ -16,19 +16,19 @@ Mem0Sharp ships with a runnable evaluation harness in [evaluation/](../evaluatio
 flowchart LR
     A[48 conversation turns<br/>2 fictional conversations] --> B[Ingest with scenario options<br/>behavior, infer, dedup, conflict resolution]
     B --> C[(PostgreSQL/pgvector<br/>fresh tables per scenario)]
-    D[24 questions<br/>4 categories] --> E[Search with scenario options<br/>hybrid, rerank, threshold]
+    D[22 questions<br/>4 categories] --> E[Search with scenario options<br/>hybrid, rerank, threshold]
     C --> E
     E --> F[Answer generation<br/>from retrieved memories]
     F --> G[LLM judge vs<br/>reference answer]
     G --> H[Accuracy, retrieval hit rate,<br/>latency, memories stored]
 ```
 
-Each scenario ingests the same two multi-session conversations into fresh, scenario-scoped PostgreSQL tables, then evaluates 24 questions:
+Each scenario ingests the same two multi-session conversations into fresh, scenario-scoped PostgreSQL tables, then evaluates 22 questions:
 
 | Category | Questions | What it tests |
 | --- | --- | --- |
 | Single-hop | 8 | Recalling one stated fact |
-| Multi-hop | 6 | Combining two or more facts |
+| Multi-hop | 4 | Combining two or more facts |
 | Temporal | 4 | Reasoning about how facts changed over time |
 | Adversarial | 6 | Refusing to answer questions the conversations never cover |
 
@@ -53,26 +53,26 @@ Each scenario ingests the same two multi-session conversations into fresh, scena
 
 ## Results
 
-### Latest live scenario matrix (2026-08-15)
+### Latest live scenario matrix (2026-08-15 10:01 UTC)
 
-Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings. This run includes the new long-term memory lifecycle scenarios: `realistic-long-haul` and `stale-forget`.
+Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings. This run covers 12 scenarios over the built-in 22-question fixture, including the long-term memory lifecycle scenarios `realistic-long-haul` and `stale-forget`.
 
-Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260815-065918.md) and [JSON](../evaluation/results/evaluation-20260815-065918.json).
+Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260815-100116.md) and [JSON](../evaluation/results/evaluation-20260815-100116.json).
 
 | Scenario | Accuracy (J) | Mean F1 | Mean BLEU-1 | Retrieval hit rate | Memories | Mean search (ms) | Ingest (s) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| baseline | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 34 | 346 | 28.2 |
-| realistic-long-haul | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 29 | 279 | 17.7 |
-| stale-forget | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 35 | 430 | 21.5 |
-| no-hybrid | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 100% (16/16; 95% CI 81%-100%) | 32 | 457 | 17.9 |
-| llm-rerank | 100% (22/22; 95% CI 85%-100%) | 0.50 | 0.26 | 100% (16/16; 95% CI 81%-100%) | 33 | 9572 | 20.3 |
-| conflict-resolution | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 94% (15/16; 95% CI 72%-99%) | 27 | 270 | 30.2 |
-| no-dedup | 95% (21/22; 95% CI 78%-99%) | 0.45 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 33 | 433 | 18.2 |
-| infer-off | 100% (22/22; 95% CI 85%-100%) | 0.52 | 0.27 | 100% (16/16; 95% CI 81%-100%) | 57 | 323 | 6.3 |
-| strict-threshold | 91% (20/22; 95% CI 72%-97%) | 0.46 | 0.24 | 94% (15/16; 95% CI 72%-99%) | 28 | 393 | 20.2 |
-| behavior-dreaming | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 81% (13/16; 95% CI 57%-93%) | 37 | 345 | 20.4 |
-| behavior-random-thoughts | 50% (11/22; 95% CI 31%-69%) | 0.26 | 0.06 | 69% (11/16; 95% CI 44%-86%) | 16 | 273 | 16.9 |
-| behavior-personal-memory | 100% (22/22; 95% CI 85%-100%) | 0.50 | 0.27 | 94% (15/16; 95% CI 72%-99%) | 21 | 391 | 20.2 |
+| baseline | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 28 | 324 | 24.0 |
+| realistic-long-haul | 91% (20/22; 95% CI 72%-97%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 30 | 298 | 18.2 |
+| stale-forget | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 94% (15/16; 95% CI 72%-99%) | 32 | 305 | 18.5 |
+| no-hybrid | 82% (18/22; 95% CI 61%-93%) | 0.43 | 0.20 | 94% (15/16; 95% CI 72%-99%) | 30 | 308 | 20.2 |
+| llm-rerank | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 100% (16/16; 95% CI 81%-100%) | 27 | 2088 | 18.0 |
+| conflict-resolution | 82% (18/22; 95% CI 61%-93%) | 0.41 | 0.17 | 81% (13/16; 95% CI 57%-93%) | 26 | 324 | 33.1 |
+| no-dedup | 100% (22/22; 95% CI 85%-100%) | 0.47 | 0.24 | 100% (16/16; 95% CI 81%-100%) | 33 | 293 | 18.8 |
+| infer-off | 100% (22/22; 95% CI 85%-100%) | 0.52 | 0.28 | 100% (16/16; 95% CI 81%-100%) | 57 | 367 | 7.1 |
+| strict-threshold | 45% (10/22; 95% CI 27%-65%) | 0.29 | 0.09 | 31% (5/16; 95% CI 14%-56%) | 27 | 333 | 16.3 |
+| behavior-dreaming | 86% (19/22; 95% CI 67%-95%) | 0.40 | 0.18 | 81% (13/16; 95% CI 57%-93%) | 34 | 314 | 19.9 |
+| behavior-random-thoughts | 73% (16/22; 95% CI 52%-87%) | 0.30 | 0.10 | 56% (9/16; 95% CI 33%-77%) | 18 | 348 | 16.8 |
+| behavior-personal-memory | 86% (19/22; 95% CI 67%-95%) | 0.42 | 0.19 | 81% (13/16; 95% CI 57%-93%) | 16 | 288 | 17.4 |
 
 ### Harness validation (2026-08-15)
 
@@ -80,17 +80,19 @@ The deterministic self-test run validates the harness plumbing and retrieval-onl
 
 | Scenario | Mode | Accuracy | Retrieval hit rate | Memories | Mean search (ms) |
 | --- | --- | --- | --- | --- | --- |
-| baseline | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 6 |
-| realistic-long-haul | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 24 |
-| stale-forget | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 6 |
-| strict-threshold | retrieval-only, deterministic local embeddings | n/a | 69% (11/16) | 57 | 3 |
+| baseline | retrieval-only, deterministic local embeddings | n/a | 81% (13/16) | 57 | 5 |
+| realistic-long-haul | retrieval-only, deterministic local embeddings | n/a | 81% (13/16) | 57 | 3 |
+| stale-forget | retrieval-only, deterministic local embeddings | n/a | 81% (13/16) | 57 | 2 |
+| strict-threshold | retrieval-only, deterministic local embeddings | n/a | 12% (2/16) | 57 | 3 |
 
 ## Interpreting the measured results
 
-- The new life-cycle features are working in the live benchmark path: `realistic-long-haul` reached 91% accuracy with a 100% retrieval hit rate, while `stale-forget` remained stable at 86% accuracy and 94% retrieval hit rate.
-- `llm-rerank` produced the strongest answer quality in this run, reaching 100% accuracy, but it paid for that with a much slower search path at roughly 9.6 seconds per scenario.
-- Behavior-aware memory remains a differentiator: `behavior-personal-memory` reached 100% accuracy and `behavior-dreaming` reached 95%, while `behavior-random-thoughts` was the weakest scenario at 50% accuracy and 69% retrieval hit rate.
-- Temporal reasoning remains the hardest category, which is expected for a small evaluation fixture; the results are best interpreted as directional rather than definitive for production workloads.
+- The long-term lifecycle scenarios both reached 91% accuracy; `realistic-long-haul` retained 94% retrieval hit rate, while `stale-forget` matched that retrieval rate after retention pruning.
+- `no-dedup` and `infer-off` led the answer-quality matrix at 100% accuracy. `infer-off` also had the highest mean F1 at 0.52, while storing the full 57-memory conversation context.
+- `llm-rerank` reached 86% accuracy with 100% retrieval, but its mean search latency rose to about 2.1 seconds. The result does not justify the added cost for this small fixture.
+- Behavior-aware memory remains useful but workload-dependent: `behavior-dreaming` and `behavior-personal-memory` reached 86%, while `behavior-random-thoughts` reached 73% with 56% retrieval hit rate.
+- The `strict-threshold` scenario reduced accuracy to 45% and retrieval to 31%, showing that a higher threshold needs workload-specific tuning.
+- Adversarial accuracy was 100% in every scenario. Temporal reasoning remains the hardest category, so these small-fixture results are directional rather than production benchmark evidence.
 
 ## Reproducing and publishing results
 
@@ -117,14 +119,3 @@ speaker turns, and `questions` with `conversationId`, `category`,
 references before starting a database run.
 
 The run writes Markdown and JSON reports next to the executable under `results/` (gitignored). To publish: copy both files into the committed [evaluation/results/](../evaluation/results/README.md) folder, then update the raw-report link above and the scenario summary and category tables, keeping the run date, model names, and mode from the report header. LLM extraction and judging are not perfectly deterministic; rerun before drawing conclusions from small differences.
-
-## Interpreting the measured results
-
-- **Adversarial accuracy is 100% in every scenario**. With retrieval scoped correctly, Mem0Sharp declines to answer questions the conversations never covered instead of hallucinating.
-- **`infer-off`, `behavior-dreaming`, and `behavior-personal-memory` share the top score at 96%**. `infer-off` is the fastest ingest path at 6.9 seconds and preserves full conversation context; dreaming stores the richest associative set at 126 memories; personal memory reaches the highest F1 at 0.52 among the behavior scenarios.
-- **The behavior-aware search correction matters**. The first run produced 0% retrieval for all non-normal behaviors because the evaluator used the factual-only default. The authoritative run explicitly selects each scenario behavior, restoring retrieval to 100% for dreaming and personal memory and 89% for random thoughts.
-- **`random-thoughts` remains the weakest factual-recall behavior** at 58% accuracy and 0.23 F1. Its 89% retrieval hit rate shows that the main loss is answer quality and associative dilution, not complete retrieval failure; use it for ideation rather than factual recall.
-- **`no-hybrid` performed well in this run** at 92% accuracy and 100% retrieval hit rate, but this small fixture is not enough to conclude that keyword fusion is unnecessary. Hybrid search remains the safer default for exact names, places, and phrases.
-- **`llm-rerank` did not pay off here**: it took 24.2 seconds per question set and reached 75% accuracy, lower than baseline. Keep reranking for larger candidate pools where vector order is demonstrably noisy.
-- **`strict-threshold` (0.3) reduced accuracy to 75% and retrieval to 94%**, while the default threshold retained 94% retrieval. Treat 0.3 as a workload-specific setting rather than a general default.
-- **Temporal reasoning remains difficult**, ranging from 50% to 75% for most scenarios. The small sample and wide confidence intervals mean these category differences should be treated as directional rather than definitive.

@@ -1,10 +1,12 @@
 using System.Net.Http.Json;
-using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Mem0Sharp;
 
-public sealed class OllamaClient : IChatCompletionClient, IBatchEmbeddingGenerator
+public sealed class OllamaClient : IChatCompletionClient, IEmbeddingGenerator
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient httpClient;
     private readonly string chatModel;
     private readonly string embeddingModel;
@@ -30,12 +32,12 @@ public sealed class OllamaClient : IChatCompletionClient, IBatchEmbeddingGenerat
         ArgumentNullException.ThrowIfNull(messages);
         using var request = new HttpRequestMessage(HttpMethod.Post, chatEndpoint)
         {
-            Content = JsonContent.Create(new { model = chatModel, messages, stream = false })
+            Content = JsonContent.Create(new { model = chatModel, messages, stream = false }, options: JsonOptions)
         };
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
-        return payload?["message"]?["content"]?.GetValue<string>() ?? string.Empty;
+        var payload = await response.Content.ReadFromJsonAsync<OllamaChatResponse>(JsonOptions, cancellationToken);
+        return payload?.Message?.Content ?? string.Empty;
     }
 
     public async Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
@@ -50,17 +52,16 @@ public sealed class OllamaClient : IChatCompletionClient, IBatchEmbeddingGenerat
         if (texts.Count == 0) return [];
         using var request = new HttpRequestMessage(HttpMethod.Post, embeddingEndpoint)
         {
-            Content = JsonContent.Create(new { model = embeddingModel, input = texts })
+            Content = JsonContent.Create(new { model = embeddingModel, input = texts }, options: JsonOptions)
         };
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
-        var embeddings = payload?["embeddings"]?.AsArray();
-        if (embeddings is null) throw new InvalidDataException("Ollama returned no embeddings.");
-        var vectors = embeddings.Select(vector => (IReadOnlyList<float>)(vector?.AsArray().Select(value => value?.GetValue<float>() ?? 0).ToArray() ?? [])).ToArray();
-        if (vectors.Length != texts.Count) throw new InvalidDataException("Ollama returned a different number of embeddings than input texts.");
-        if (vectors.Select(vector => vector.Count).Distinct().Count() > 1) throw new InvalidDataException("Ollama returned inconsistent embedding dimensions.");
-        return vectors;
+        var payload = await response.Content.ReadFromJsonAsync<OllamaEmbedResponse>(JsonOptions, cancellationToken);
+        var embeddings = payload?.Embeddings;
+        if (embeddings is null || embeddings.Length == 0) throw new InvalidDataException("Ollama returned no embeddings.");
+        if (embeddings.Length != texts.Count) throw new InvalidDataException("Ollama returned a different number of embeddings than input texts.");
+        if (embeddings.Select(vector => vector.Length).Distinct().Count() > 1) throw new InvalidDataException("Ollama returned inconsistent embedding dimensions.");
+        return embeddings;
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -69,4 +70,13 @@ public sealed class OllamaClient : IChatCompletionClient, IBatchEmbeddingGenerat
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new HttpRequestException($"Ollama request failed with {(int)response.StatusCode}: {body}");
     }
+
+    private sealed record OllamaChatResponse(
+        [property: JsonPropertyName("message")] OllamaChatMessage? Message);
+
+    private sealed record OllamaChatMessage(
+        [property: JsonPropertyName("content")] string? Content);
+
+    private sealed record OllamaEmbedResponse(
+        [property: JsonPropertyName("embeddings")] float[][]? Embeddings);
 }

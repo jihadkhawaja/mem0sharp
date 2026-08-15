@@ -31,12 +31,15 @@ await memory.AddAsync(
     new Message("user", "I live in Lisbon and my favorite language is C#."),
     new Message("assistant", "Thanks, I will remember that.")
 ],
-userId: "alice");
+new MemoryAddOptions { UserId = "alice" });
 
 var results = await memory.SearchAsync(
     "Where does Alice live?",
-    new MemoryFilter(UserId: "alice"),
-    topK: 3);
+    new MemorySearchOptions
+    {
+        Filter = new MemoryFilter(UserId: "alice"),
+        TopK = 3
+    });
 
 foreach (var result in results)
 {

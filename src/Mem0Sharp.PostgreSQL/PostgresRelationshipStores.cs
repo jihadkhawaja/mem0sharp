@@ -181,13 +181,18 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     {
         var terms = Normalize(query).Split(' ', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToArray();
         if (terms.Length == 0) return new Dictionary<string, double>();
-        var relations = await GetRelationsAsync(cancellationToken: cancellationToken);
+
+        var patterns = terms.Select(term => $"%{term}%").ToArray();
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"SELECT source, relationship, target, memory_id FROM {tableName} WHERE source ILIKE ANY($1) OR relationship ILIKE ANY($1) OR target ILIKE ANY($1)", connection);
+        command.Parameters.AddWithValue(patterns);
+
         var boosts = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var relation in relations)
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
-            var relationTerms = Normalize($"{relation.Source} {relation.Relationship} {relation.Target}").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (!relationTerms.Any(terms.Contains)) continue;
-            boosts[relation.MemoryId] = Math.Min(0.5, boosts.GetValueOrDefault(relation.MemoryId) + 0.25);
+            var memoryId = reader.GetString(3);
+            boosts[memoryId] = Math.Min(0.5, boosts.GetValueOrDefault(memoryId) + 0.25);
         }
         return boosts;
     }
@@ -195,16 +200,28 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     public async Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"SELECT id, source, relationship, target, memory_id FROM {tableName} ORDER BY source, relationship, target", connection);
-        var relations = new List<MemoryRelation>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var normalizedQuery = query is null ? null : Normalize(query);
-        while (await reader.ReadAsync(cancellationToken))
+        NpgsqlCommand command;
+        if (!string.IsNullOrWhiteSpace(query))
         {
-            var relation = new MemoryRelation(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4));
-            if (normalizedQuery is null || Normalize($"{relation.Source} {relation.Relationship} {relation.Target}").Contains(normalizedQuery, StringComparison.Ordinal)) relations.Add(relation);
+            var pattern = $"%{query.Trim()}%";
+            command = new NpgsqlCommand($"SELECT id, source, relationship, target, memory_id FROM {tableName} WHERE source ILIKE $1 OR relationship ILIKE $1 OR target ILIKE $1 ORDER BY source, relationship, target", connection);
+            command.Parameters.AddWithValue(pattern);
         }
-        return relations;
+        else
+        {
+            command = new NpgsqlCommand($"SELECT id, source, relationship, target, memory_id FROM {tableName} ORDER BY source, relationship, target", connection);
+        }
+
+        await using (command)
+        {
+            var relations = new List<MemoryRelation>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                relations.Add(new MemoryRelation(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)));
+            }
+            return relations;
+        }
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)

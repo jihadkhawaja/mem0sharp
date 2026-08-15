@@ -7,7 +7,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Mem0Sharp.PostgreSQL</PackageId>
-    <Version>0.1.6</Version>
+    <Version>0.2.0</Version>
     <Authors>mem0sharp contributors</Authors>
     <Description>PostgreSQL and pgvector persistence providers for Mem0Sharp.</Description>
     <PackageTags>ai;memory;agents;pgvector;postgresql;mem0sharp</PackageTags>

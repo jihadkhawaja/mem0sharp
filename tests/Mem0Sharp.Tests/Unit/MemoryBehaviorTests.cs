@@ -74,15 +74,17 @@ public sealed class MemoryBehaviorTests
     }
 
     [Fact]
-    public async Task NonNormalBehaviorRequiresABehaviorAwareExtractor()
+    public async Task LlmExtractorAppliesBehaviorPrompt()
     {
-        var service = new MemoryService(extractor: new BasicMemoryExtractor());
+        var client = new RecordingChatClient("[\"dream fragment\"]");
+        var extractor = new LlmMemoryExtractor(client);
 
-        var error = await Assert.ThrowsAsync<NotSupportedException>(() => service.AddAsync(
+        var inputs = await extractor.ExtractAsync(
             [new Message("user", "Think about this")],
-            new MemoryAddOptions { Behavior = MemoryBehavior.RandomThoughts }));
+            new MemoryAddOptions { Behavior = MemoryBehavior.RandomThoughts });
 
-        Assert.Contains(nameof(IBehaviorAwareMemoryExtractor), error.Message);
+        Assert.Single(inputs);
+        Assert.Contains(client.Messages, m => m.Role == "system" && m.Content.Contains("spontaneous thoughts"));
     }
 
     [Fact]

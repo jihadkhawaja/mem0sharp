@@ -23,18 +23,20 @@ Mem0Sharp is an independent, standalone C#/.NET implementation of the open-sourc
 
 ---
 
-## 5-Line Quickstart
+## Quickstart
 
-Get started immediately with zero external databases or API keys:
+Get started immediately with in-memory storage, deterministic local embeddings, and no external services:
 
 ```csharp
 using Mem0Sharp;
 
-var memory = new MemoryService(new InMemoryMemoryStore(), new LocalEmbeddingGenerator(384));
-await memory.AddAsync("I prefer C# over Python.", userId: "alice");
-var results = await memory.SearchAsync("What language does Alice like?", new MemoryFilter(UserId: "alice"));
+var memory = new MemoryService();
+await memory.AddAsync("I prefer C# over Python.", new MemoryAddOptions { UserId = "alice" });
+var results = await memory.SearchAsync(
+    "What language does Alice like?",
+    new MemorySearchOptions { Filter = new MemoryFilter(UserId: "alice"), TopK = 1 });
 
-Console.WriteLine(results[0].Memory.Text); // Outputs: I prefer C# over Python.
+Console.WriteLine(results[0].Memory.Text); // I prefer C# over Python.
 ```
 
 ---

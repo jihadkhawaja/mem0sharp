@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Mem0Sharp;
 
-public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemoryStore, IAtomicMemoryStore, IResettableMemoryStore, IAsyncDisposable
+public sealed class PostgresMemoryStore : IMemoryStore, IAsyncDisposable
 {
     private static readonly Regex IdentifierPattern = new("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly PostgresMemoryStoreOptions options;
@@ -74,14 +74,10 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
             """, cancellationToken);
     }
 
-    public async Task SaveAsync(Memory memory, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(Memory memory, IReadOnlyList<float>? embedding = null, CancellationToken cancellationToken = default)
     {
-        await SaveCoreAsync(memory, null, cancellationToken);
-    }
-
-    public async Task SaveAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
-    {
-        if (embedding.Count != options.EmbeddingDimensions) throw new ArgumentException("Embedding dimensions do not match the PostgreSQL vector column.", nameof(embedding));
+        if (embedding is not null && embedding.Count != options.EmbeddingDimensions)
+            throw new ArgumentException("Embedding dimensions do not match the PostgreSQL vector column.", nameof(embedding));
         await SaveCoreAsync(memory, embedding, cancellationToken);
     }
 
@@ -97,7 +93,7 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    public async Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(records);
         foreach (var record in records)
@@ -112,33 +108,47 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         foreach (var record in records)
         {
             await SaveCoreAsync(connection, transaction, record.Memory, record.Embedding, cancellationToken);
-            await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+            if (record.History is not null)
+            {
+                await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+            }
         }
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry history, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string id, MemoryHistoryEntry? history = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await DeleteCoreAsync(connection, transaction, id, cancellationToken);
-        await SaveHistoryCoreAsync(connection, transaction, history, cancellationToken);
+        if (history is not null)
+        {
+            await SaveHistoryCoreAsync(connection, transaction, history, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, IReadOnlyList<MemoryDeleteRecord>? records = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(records);
-        if (records.Count == 0) return;
-
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        foreach (var record in records)
+        if (records is not null)
         {
-            await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
-            await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+            if (records.Count == 0) return 0;
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            foreach (var record in records)
+            {
+                await DeleteCoreAsync(connection, transaction, record.Memory.Id, cancellationToken);
+                await SaveHistoryCoreAsync(connection, transaction, record.History, cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return records.Count;
         }
-        await transaction.CommitAsync(cancellationToken);
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        var (where, parameters) = BuildFilter(filter);
+        await using var command = new NpgsqlCommand($"DELETE FROM {tableName} {where}", conn);
+        AddParameters(command, parameters);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default)
@@ -187,21 +197,6 @@ public sealed class PostgresMemoryStore : IBatchVectorMemoryStore, IBulkMemorySt
         ArgumentNullException.ThrowIfNull(embeddings);
         var searches = embeddings.Select(embedding => SearchAsync(embedding, filter, topK, cancellationToken));
         return await Task.WhenAll(searches);
-    }
-
-    public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await DeleteCoreAsync(connection, null, id, cancellationToken);
-    }
-
-    public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
-    {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        var (where, parameters) = BuildFilter(filter);
-        await using var command = new NpgsqlCommand($"DELETE FROM {tableName} {where}", connection);
-        AddParameters(command, parameters);
-        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)

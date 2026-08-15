@@ -6,12 +6,11 @@ public sealed class SynchronousMemoryService
 
     public SynchronousMemoryService(IMemoryService service) => this.service = service;
 
-    public AddResult Add(string text, MemoryAddOptions? options = null) => options is null ? service.AddAsync(text).GetAwaiter().GetResult() : service.AddAsync(text, options).GetAwaiter().GetResult();
-    public AddResult Add(IEnumerable<Message> messages, MemoryAddOptions? options = null) => options is null ? service.AddAsync(messages).GetAwaiter().GetResult() : service.AddAsync(messages, options).GetAwaiter().GetResult();
+    public AddResult Add(string text, MemoryAddOptions? options = null) => service.AddAsync(text, options).GetAwaiter().GetResult();
+    public AddResult Add(IEnumerable<Message> messages, MemoryAddOptions? options = null) => service.AddAsync(messages, options).GetAwaiter().GetResult();
     public AddResult AddMany(IEnumerable<string> texts, MemoryAddOptions? options = null) => service.AddManyAsync(texts, options).GetAwaiter().GetResult();
-    public IReadOnlyList<SearchResult> Search(string query, MemorySearchOptions? options = null) => options is null ? service.SearchAsync(query).GetAwaiter().GetResult() : service.SearchAsync(query, options).GetAwaiter().GetResult();
-    public IReadOnlyList<IReadOnlyList<SearchResult>> SearchMany(IEnumerable<string> queries, MemoryFilter? filter = null, int? topK = null) => service.SearchManyAsync(queries, filter, topK).GetAwaiter().GetResult();
-    public IReadOnlyList<IReadOnlyList<SearchResult>> SearchMany(IEnumerable<string> queries, MemorySearchOptions options) => service.SearchManyAsync(queries, options).GetAwaiter().GetResult();
+    public IReadOnlyList<SearchResult> Search(string query, MemorySearchOptions? options = null) => service.SearchAsync(query, options).GetAwaiter().GetResult();
+    public IReadOnlyList<IReadOnlyList<SearchResult>> SearchMany(IEnumerable<string> queries, MemorySearchOptions? options = null) => service.SearchManyAsync(queries, options).GetAwaiter().GetResult();
     public Memory? Get(string id) => service.GetAsync(id).GetAwaiter().GetResult();
     public IReadOnlyList<Memory> GetAll(MemoryFilter? filter = null) => service.GetAllAsync(filter).GetAwaiter().GetResult();
     public MemoryPage GetPage(MemoryPageOptions options, MemoryFilter? filter = null) => service.GetPageAsync(options, filter).GetAwaiter().GetResult();

@@ -7,7 +7,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Mem0Sharp.SQLite</PackageId>
-    <Version>0.1.6</Version>
+    <Version>0.2.0</Version>
     <Authors>mem0sharp contributors</Authors>
     <Description>SQLite persistence provider for Mem0Sharp.</Description>
     <PackageTags>ai;memory;agents;sqlite;mem0sharp</PackageTags>

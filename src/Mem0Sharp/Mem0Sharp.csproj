@@ -7,7 +7,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Mem0Sharp</PackageId>
-    <Version>0.1.6</Version>
+    <Version>0.2.0</Version>
     <Authors>mem0sharp contributors</Authors>
     <Description>Long-term memory for AI applications in .NET with semantic search and replaceable embedding and storage providers.</Description>
     <PackageTags>ai;memory;agents;rag;semantic-search</PackageTags>
@@ -23,5 +23,8 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
     <None Include="..\..\NOTICE" Pack="true" PackagePath="NOTICE" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="LICENSE" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Numerics.Tensors" Version="10.0.11" />
   </ItemGroup>
 </Project>

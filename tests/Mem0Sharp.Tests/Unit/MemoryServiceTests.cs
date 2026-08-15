@@ -511,7 +511,7 @@ public sealed class MemoryServiceTests
 
     private sealed class ThrowingExtractor : IMemoryExtractor
     {
-        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Raw adds must not invoke the extractor.");
     }
 
@@ -524,6 +524,8 @@ public sealed class MemoryServiceTests
     private sealed class ConstantEmbeddingGenerator : IEmbeddingGenerator
     {
         public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<float>>([1, 0]);
+        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
     }
 
     private sealed class ReverseReranker : IMemoryReranker
@@ -562,7 +564,7 @@ public sealed class MemoryServiceTests
         }
     }
 
-    private sealed class CountingBatchEmbeddingGenerator : IBatchEmbeddingGenerator
+    private sealed class CountingBatchEmbeddingGenerator : IEmbeddingGenerator
     {
         public int BatchCalls { get; private set; }
         public int SingleCalls { get; private set; }
@@ -580,16 +582,15 @@ public sealed class MemoryServiceTests
         }
     }
 
-    private sealed class CountingBatchVectorStore : IBatchVectorMemoryStore
+    private sealed class CountingBatchVectorStore : IMemoryStore
     {
         private readonly Memory result = new() { Id = "result", Text = "batch result", UserId = "default_user" };
 
         public int BatchSearchCalls { get; private set; }
         public int SingleSearchCalls { get; private set; }
 
-        public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task SaveAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveAsync(Memory memory, IReadOnlyList<float>? embedding = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => Task.FromResult<Memory?>(null);
         public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
@@ -597,7 +598,11 @@ public sealed class MemoryServiceTests
             await Task.CompletedTask;
             yield break;
         }
-        public Task DeleteAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteAsync(string id, MemoryHistoryEntry? history = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<int> DeleteAllAsync(MemoryFilter? filter = null, IReadOnlyList<MemoryDeleteRecord>? records = null, CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>([]);
+        public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
         {
@@ -612,5 +617,4 @@ public sealed class MemoryServiceTests
             return Task.FromResult(results);
         }
     }
-
 }

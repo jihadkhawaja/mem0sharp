@@ -1,9 +1,9 @@
-using System.Numerics;
+using System.Numerics.Tensors;
 using System.Text;
 
 namespace Mem0Sharp;
 
-public sealed class LocalEmbeddingGenerator : IBatchEmbeddingGenerator
+public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
 {
     public int Dimensions { get; }
 
@@ -25,10 +25,10 @@ public sealed class LocalEmbeddingGenerator : IBatchEmbeddingGenerator
             vector[(uint)(hash >> 16) % (uint)Dimensions] += 0.5f;
         }
 
-        var norm = MathF.Sqrt(vector.Sum(value => value * value));
+        var norm = TensorPrimitives.Norm(vector);
         if (norm > 0)
         {
-            for (var index = 0; index < vector.Length; index++) vector[index] /= norm;
+            TensorPrimitives.Divide(vector, norm, vector);
         }
         return Task.FromResult<IReadOnlyList<float>>(vector);
     }
@@ -40,12 +40,21 @@ public sealed class LocalEmbeddingGenerator : IBatchEmbeddingGenerator
         return vectors;
     }
 
-    private static int StableHash(string value)
+    private static int StableHash(ReadOnlySpan<char> value)
     {
         unchecked
         {
             var hash = 17;
-            foreach (var character in Encoding.UTF8.GetBytes(value)) hash = hash * 31 + character;
+            Span<byte> utf8Bytes = stackalloc byte[128];
+            if (Encoding.UTF8.TryGetBytes(value, utf8Bytes, out var written))
+            {
+                foreach (var b in utf8Bytes[..written]) hash = hash * 31 + b;
+            }
+            else
+            {
+                var heapBytes = Encoding.UTF8.GetBytes(value.ToString());
+                foreach (var b in heapBytes) hash = hash * 31 + b;
+            }
             return hash & int.MaxValue;
         }
     }
