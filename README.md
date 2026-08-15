@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/banner.png" alt="Mem0Sharp Banner" width="100%" />
+</div>
+
 # Mem0Sharp
 
 [![NuGet version](https://img.shields.io/nuget/v/Mem0Sharp.svg)](https://www.nuget.org/packages/Mem0Sharp)

@@ -16,8 +16,10 @@
     <RepositoryUrl>https://github.com/jihadkhawaja/mem0sharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="icon.png" />
     <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
     <None Include="..\..\NOTICE" Pack="true" PackagePath="NOTICE" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="LICENSE" />
