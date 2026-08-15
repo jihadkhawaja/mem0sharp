@@ -416,6 +416,82 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task ConsolidateAsyncCreatesABehavioralSummaryFromRecentMemories()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("Alice prefers dark mode and Vim in the editor.", "alice");
+        await service.AddAsync("Alice likes a terminal with a dark theme and keyboard shortcuts.", "alice");
+        await service.AddAsync("Alice often works late into the evening.", "alice");
+
+        var created = await service.ConsolidateAsync(new MemoryFilter(UserId: "alice"), maxItems: 3);
+
+        var summary = Assert.Single(created);
+        Assert.Equal("consolidated_memory", summary.MemoryType);
+        Assert.Contains("dark mode", summary.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Vim", summary.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("3", summary.Metadata["summary_source_count"]);
+    }
+
+    [Fact]
+    public async Task SearchUsesRecencyBiasToPreferFreshMemories()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store, embeddings: new ConstantEmbeddingGenerator());
+        var oldMemory = new Memory
+        {
+            Id = "old-memory",
+            Text = "Alice prefers the old editor layout.",
+            UserId = "alice",
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            Hash = "old-hash",
+            Metadata = new Dictionary<string, string>()
+        };
+        var newMemory = new Memory
+        {
+            Id = "new-memory",
+            Text = "Alice prefers dark mode and Vim.",
+            UserId = "alice",
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            Hash = "new-hash",
+            Metadata = new Dictionary<string, string>()
+        };
+
+        await store.SaveAsync(oldMemory);
+        await store.SaveAsync(newMemory);
+
+        var results = await service.SearchAsync("editor preferences", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            TopK = 2,
+            Threshold = 0,
+            RecencyBias = 0.9,
+            FreshnessWindow = TimeSpan.FromDays(40)
+        });
+
+        Assert.Equal("new-memory", results[0].Memory.Id);
+    }
+
+    [Fact]
+    public async Task ForgetStaleAsyncRemovesMemoriesPastRetentionWindow()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store);
+        var oldId = (await service.AddAsync("stale preference", new MemoryAddOptions { UserId = "alice" })).Memories[0].Id;
+        var freshId = (await service.AddAsync("fresh preference", new MemoryAddOptions { UserId = "alice" })).Memories[0].Id;
+
+        var oldMemory = await service.GetAsync(oldId);
+        await store.SaveAsync(oldMemory! with { UpdatedAt = DateTimeOffset.UtcNow.AddDays(-30), CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) });
+
+        var removed = await service.ForgetStaleAsync(TimeSpan.FromDays(7), new MemoryFilter(UserId: "alice"));
+
+        Assert.Equal(1, removed);
+        Assert.Null(await service.GetAsync(oldId));
+        Assert.NotNull(await service.GetAsync(freshId));
+    }
+
+    [Fact]
     public void SynchronousFacadeWrapsTheAsyncServiceSurface()
     {
         var memory = new SynchronousMemoryService(new MemoryService(graphExtractor: new StubGraphExtractor(), graphStore: new InMemoryGraphStore()));

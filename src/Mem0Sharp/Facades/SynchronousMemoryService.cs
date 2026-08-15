@@ -18,6 +18,8 @@ public sealed class SynchronousMemoryService
     public Memory Update(string id, MemoryUpdate update) => service.UpdateAsync(id, update).GetAwaiter().GetResult();
     public void Delete(string id) => service.DeleteAsync(id).GetAwaiter().GetResult();
     public int DeleteAll(MemoryFilter? filter = null) => service.DeleteAllAsync(filter).GetAwaiter().GetResult();
+    public int ForgetStale(TimeSpan retentionWindow, MemoryFilter? filter = null) => service.ForgetStaleAsync(retentionWindow, filter).GetAwaiter().GetResult();
+    public IReadOnlyList<Memory> Consolidate(MemoryFilter? filter = null, int maxItems = 10) => service.ConsolidateAsync(filter, maxItems).GetAwaiter().GetResult();
     public IReadOnlyList<MemoryHistoryEntry> History(string id) => service.GetHistoryAsync(id).GetAwaiter().GetResult();
     public void Reset() => service.ResetAsync().GetAwaiter().GetResult();
     public IReadOnlyList<MemoryRelation> GetRelations(string? query = null) => service.GetRelationsAsync(query).GetAwaiter().GetResult();

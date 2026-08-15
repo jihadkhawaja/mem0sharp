@@ -76,8 +76,25 @@ if (selfTest)
 {
     // The self-test validates dataset integrity and PostgreSQL plumbing with the
     // deterministic local provider; it needs no API key and reports retrieval only.
-    selected = [Scenarios.All[0]];
-    Console.WriteLine("Self-test mode: deterministic local embeddings, retrieval metrics only, scenario 'baseline'.");
+    var defaultSelfTestScenarios = new[]
+    {
+        "baseline",
+        "realistic-long-haul",
+        "stale-forget",
+        "strict-threshold"
+    };
+
+    // Behavior-aware extraction paths (for example PersonalMemory) require a live
+    // LLM-backed extractor; deterministic self-test mode intentionally omits them.
+
+    if (scenarioFilter.Count == 0)
+    {
+        selected = Scenarios.All
+            .Where(scenario => defaultSelfTestScenarios.Contains(scenario.Name, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    Console.WriteLine($"Self-test mode: deterministic local embeddings, retrieval metrics only, scenarios: {string.Join(", ", selected.Select(s => s.Name))}.");
 }
 
 EvaluationConfiguration configuration;

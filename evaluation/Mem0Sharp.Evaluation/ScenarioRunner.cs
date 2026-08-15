@@ -67,6 +67,12 @@ internal sealed class ScenarioRunner(
                 }, cancellationToken);
                 memoriesStored += result.Memories.Count;
             }
+
+            if (scenario.ForgetStaleAfterDays is > 0)
+            {
+                var userId = $"eval-{scenario.Name}-{conversation.Id}";
+                await memory.ForgetStaleAsync(TimeSpan.FromDays(scenario.ForgetStaleAfterDays.Value), new MemoryFilter(UserId: userId), cancellationToken);
+            }
         }
         ingestWatch.Stop();
 
@@ -129,7 +135,9 @@ internal sealed class ScenarioRunner(
             Hybrid = scenario.Hybrid,
             Rerank = scenario.Rerank && !retrievalOnly,
             Explain = false,
-            Behavior = scenario.Behavior
+            Behavior = scenario.Behavior,
+            RecencyBias = scenario.RecencyBias,
+            FreshnessWindow = scenario.FreshnessWindowDays is null ? null : TimeSpan.FromDays(scenario.FreshnessWindowDays.Value)
         }, cancellationToken);
         searchWatch.Stop();
 

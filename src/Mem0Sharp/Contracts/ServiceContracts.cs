@@ -18,6 +18,8 @@ public interface IMemoryService
     Task<Memory> UpdateAsync(string id, MemoryUpdate update, CancellationToken cancellationToken = default);
     Task DeleteAsync(string id, CancellationToken cancellationToken = default);
     Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default);
+    Task<int> ForgetStaleAsync(TimeSpan retentionWindow, MemoryFilter? filter = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Memory>> ConsolidateAsync(MemoryFilter? filter = null, int maxItems = 10, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string id, CancellationToken cancellationToken = default);
     Task ResetAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default);

@@ -54,6 +54,7 @@ its `vector` extension are infrastructure prerequisites, not NuGet dependencies.
 - CRUD operations plus filtered bulk deletion.
 - Persistent `ADD`, `UPDATE`, and `DELETE` history with audit timestamps, deletion state, actor, and role for built-in stores.
 - Scope-aware deduplication and conflict-aware Add/Update/Delete/None decisions.
+- Long-term memory lifecycle: recency-biased retrieval, freshness-window filtering, stale-memory forgetting, and consolidation for evolving preferences over time.
 - Memory behaviors beyond traditional fact storage: normal, dreaming, random thoughts, and personality-shaped first-person memory.
 - Expiration, paging, nested metadata filters, entities, and optional graph memory.
 - Batch embedding and transactional PostgreSQL batch persistence.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -160,7 +161,31 @@ public sealed class MemoryService : IMemoryService
         {
             ranked = await reranker.RerankAsync(query, ranked, searchOptions.TopK, cancellationToken);
         }
+        if (searchOptions.RecencyBias > 0)
+        {
+            ranked = ApplyRecencyBias(ranked, searchOptions);
+        }
         return ranked;
+    }
+
+    private static IReadOnlyList<SearchResult> ApplyRecencyBias(IReadOnlyList<SearchResult> ranked, MemorySearchOptions searchOptions)
+    {
+        var recencyBias = Math.Clamp(searchOptions.RecencyBias, 0d, 1d);
+        if (recencyBias <= 0) return ranked;
+        var window = searchOptions.FreshnessWindow ?? TimeSpan.FromDays(30);
+        if (window <= TimeSpan.Zero) window = TimeSpan.FromDays(30);
+        var now = DateTimeOffset.UtcNow;
+
+        return ranked
+            .Select(result =>
+            {
+                var age = now - result.Memory.UpdatedAt;
+                var freshness = age <= TimeSpan.Zero ? 1d : Math.Clamp(1d - age.TotalSeconds / window.TotalSeconds, 0d, 1d);
+                var boostedScore = result.Score * (1d - recencyBias) + freshness * recencyBias;
+                return result with { Score = boostedScore };
+            })
+            .OrderByDescending(result => result.Score)
+            .ToArray();
     }
 
     public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemoryFilter? filter = null, int? topK = null, CancellationToken cancellationToken = default)
@@ -222,6 +247,54 @@ public sealed class MemoryService : IMemoryService
         if (pageOptions.Limit < 0) throw new ArgumentOutOfRangeException(nameof(pageOptions));
         var memories = await GetAllAsync(filter, cancellationToken);
         return new MemoryPage(memories.Skip(pageOptions.Offset).Take(pageOptions.Limit).ToArray(), memories.Count, pageOptions.Offset, pageOptions.Limit);
+    }
+
+    public async Task<int> ForgetStaleAsync(TimeSpan retentionWindow, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        if (retentionWindow < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(retentionWindow));
+        var cutoff = DateTimeOffset.UtcNow - retentionWindow;
+        var stale = (await GetAllAsync(filter is null ? new MemoryFilter(IncludeExpired: true) : filter with { IncludeExpired = true }, cancellationToken))
+            .Where(memory => memory.UpdatedAt < cutoff || memory.CreatedAt < cutoff || (memory.ExpiresAt.HasValue && memory.ExpiresAt.Value < DateTimeOffset.UtcNow))
+            .ToArray();
+        foreach (var memory in stale) await DeleteAsync(memory.Id, cancellationToken);
+        return stale.Length;
+    }
+
+    public async Task<IReadOnlyList<Memory>> ConsolidateAsync(MemoryFilter? filter = null, int maxItems = 10, CancellationToken cancellationToken = default)
+    {
+        if (maxItems < 0) throw new ArgumentOutOfRangeException(nameof(maxItems));
+        var memories = (await GetAllAsync(filter, cancellationToken))
+            .OrderByDescending(memory => memory.UpdatedAt)
+            .Take(maxItems)
+            .ToArray();
+        if (memories.Length == 0) return [];
+
+        var summaryText = string.Join(" ", memories.Select(memory => memory.Text).Where(text => !string.IsNullOrWhiteSpace(text)));
+        if (string.IsNullOrWhiteSpace(summaryText)) return [];
+
+        var scope = filter?.Scope ?? MemoryScope.User;
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["summary_source_count"] = memories.Length.ToString(CultureInfo.InvariantCulture),
+            ["summary_window_start"] = memories.Min(memory => memory.CreatedAt).ToString("O"),
+            ["summary_window_end"] = memories.Max(memory => memory.UpdatedAt).ToString("O"),
+            ["summary_generated_at"] = DateTimeOffset.UtcNow.ToString("O")
+        };
+
+        var result = await SaveInputsAsync(
+            [new MemoryInput(summaryText, scope, metadata, Behavior: MemoryBehavior.Normal, MemoryType: "consolidated_memory")],
+            new MemoryAddOptions
+            {
+                UserId = filter?.UserId ?? "default_user",
+                AgentId = filter?.AgentId,
+                RunId = filter?.RunId,
+                Scope = scope,
+                Metadata = metadata,
+                Infer = false,
+                MemoryType = "consolidated_memory"
+            },
+            cancellationToken);
+        return result.Memories;
     }
 
     public async Task<Memory> UpdateAsync(string id, string text, IReadOnlyDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default)

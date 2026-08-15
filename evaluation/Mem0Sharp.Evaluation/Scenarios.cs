@@ -16,6 +16,9 @@ internal sealed record ScenarioDefinition
     public bool Hybrid { get; init; } = true;
     public bool Rerank { get; init; }
     public double Threshold { get; init; } = 0.1;
+    public double RecencyBias { get; init; }
+    public int? FreshnessWindowDays { get; init; }
+    public int? ForgetStaleAfterDays { get; init; }
 
     /// <summary>PostgreSQL-safe table suffix for this scenario.</summary>
     internal string TableName => "eval_" + Name.Replace('-', '_');
@@ -29,6 +32,21 @@ internal static class Scenarios
         {
             Name = "baseline",
             Description = "Default pipeline: LLM extraction, hybrid search, deduplication on, no conflict resolution, no reranking."
+        },
+        new ScenarioDefinition
+        {
+            Name = "realistic-long-haul",
+            Description = "Long-horizon retrieval tuned for recency-aware personal memory and preference drift.",
+            RecencyBias = 0.35,
+            FreshnessWindowDays = 90
+        },
+        new ScenarioDefinition
+        {
+            Name = "stale-forget",
+            Description = "Baseline with retention pruning to simulate forgetting stale or superseded facts.",
+            ForgetStaleAfterDays = 45,
+            RecencyBias = 0.4,
+            FreshnessWindowDays = 60
         },
         new ScenarioDefinition
         {

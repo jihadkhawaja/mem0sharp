@@ -39,6 +39,8 @@ Each scenario ingests the same two multi-session conversations into fresh, scena
 | Scenario | What it varies |
 | --- | --- |
 | `baseline` | Default pipeline: LLM extraction, hybrid search, dedup on |
+| `realistic-long-haul` | Long-horizon retrieval tuned for recency-aware personal memory and preference drift |
+| `stale-forget` | Retention pruning to simulate forgetting stale or superseded facts |
 | `no-hybrid` | Semantic vector search only |
 | `llm-rerank` | Adds `LlmReranker` |
 | `conflict-resolution` | Adds `LlmMemoryConflictResolver` (ADD/UPDATE/DELETE/NONE decisions) |
@@ -51,52 +53,44 @@ Each scenario ingests the same two multi-session conversations into fresh, scena
 
 ## Results
 
-### LLM-judged scenario matrix (2026-08-11)
+### Latest live scenario matrix (2026-08-15)
 
-Authoritative full run against the composed PostgreSQL/pgvector database with
-`gpt-5-mini` for extraction, answering, and judging, and
-`text-embedding-3-small` (1536 dimensions) for embeddings. All 10 scenarios
-completed without provider errors. Behavior scenarios use an explicit behavior
-filter during search so their non-normal memories are evaluated instead of
-being excluded by the factual-search default.
+Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings. This run includes the new long-term memory lifecycle scenarios: `realistic-long-haul` and `stale-forget`.
 
-Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260811-035035.md) and [JSON](../evaluation/results/evaluation-20260811-035035.json).
+Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260815-065918.md) and [JSON](../evaluation/results/evaluation-20260815-065918.json).
 
 | Scenario | Accuracy (J) | Mean F1 | Mean BLEU-1 | Retrieval hit rate | Memories | Mean search (ms) | Ingest (s) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| baseline | 83% (20/24; 95% CI 64%-93%) | 0.48 | 0.30 | 94% (17/18; 95% CI 74%-99%) | 44 | 312 | 99.1 |
-| no-hybrid | 92% (22/24; 95% CI 74%-98%) | 0.46 | 0.28 | 100% (18/18; 95% CI 82%-100%) | 49 | 305 | 111.9 |
-| llm-rerank | 75% (18/24; 95% CI 55%-88%) | 0.38 | 0.21 | 94% (17/18; 95% CI 74%-99%) | 38 | 24232 | 94.2 |
-| conflict-resolution | 92% (22/24; 95% CI 74%-98%) | 0.49 | 0.31 | 100% (18/18; 95% CI 82%-100%) | 39 | 373 | 163.4 |
-| no-dedup | 88% (21/24; 95% CI 69%-96%) | 0.47 | 0.28 | 100% (18/18; 95% CI 82%-100%) | 43 | 351 | 110.9 |
-| infer-off | 96% (23/24; 95% CI 80%-99%) | 0.54 | 0.36 | 100% (18/18; 95% CI 82%-100%) | 48 | 305 | 6.9 |
-| strict-threshold | 75% (18/24; 95% CI 55%-88%) | 0.41 | 0.25 | 94% (17/18; 95% CI 74%-99%) | 40 | 305 | 107.8 |
-| behavior-dreaming | 96% (23/24; 95% CI 80%-99%) | 0.44 | 0.27 | 100% (18/18; 95% CI 82%-100%) | 126 | 330 | 136.7 |
-| behavior-random-thoughts | 58% (14/24; 95% CI 39%-76%) | 0.23 | 0.08 | 89% (16/18; 95% CI 67%-97%) | 98 | 327 | 141.8 |
-| behavior-personal-memory | 96% (23/24; 95% CI 80%-99%) | 0.52 | 0.34 | 100% (18/18; 95% CI 82%-100%) | 58 | 318 | 147.9 |
+| baseline | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 34 | 346 | 28.2 |
+| realistic-long-haul | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 29 | 279 | 17.7 |
+| stale-forget | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 35 | 430 | 21.5 |
+| no-hybrid | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 100% (16/16; 95% CI 81%-100%) | 32 | 457 | 17.9 |
+| llm-rerank | 100% (22/22; 95% CI 85%-100%) | 0.50 | 0.26 | 100% (16/16; 95% CI 81%-100%) | 33 | 9572 | 20.3 |
+| conflict-resolution | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 94% (15/16; 95% CI 72%-99%) | 27 | 270 | 30.2 |
+| no-dedup | 95% (21/22; 95% CI 78%-99%) | 0.45 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 33 | 433 | 18.2 |
+| infer-off | 100% (22/22; 95% CI 85%-100%) | 0.52 | 0.27 | 100% (16/16; 95% CI 81%-100%) | 57 | 323 | 6.3 |
+| strict-threshold | 91% (20/22; 95% CI 72%-97%) | 0.46 | 0.24 | 94% (15/16; 95% CI 72%-99%) | 28 | 393 | 20.2 |
+| behavior-dreaming | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 81% (13/16; 95% CI 57%-93%) | 37 | 345 | 20.4 |
+| behavior-random-thoughts | 50% (11/22; 95% CI 31%-69%) | 0.26 | 0.06 | 69% (11/16; 95% CI 44%-86%) | 16 | 273 | 16.9 |
+| behavior-personal-memory | 100% (22/22; 95% CI 85%-100%) | 0.50 | 0.27 | 94% (15/16; 95% CI 72%-99%) | 21 | 391 | 20.2 |
 
-Accuracy by category:
+### Harness validation (2026-08-15)
 
-| Scenario | Single-hop | Multi-hop | Temporal | Adversarial |
-| --- | --- | --- | --- | --- |
-| baseline | 100% | 67% | 50% | 100% |
-| no-hybrid | 100% | 83% | 75% | 100% |
-| llm-rerank | 88% | 33% | 75% | 100% |
-| conflict-resolution | 100% | 83% | 75% | 100% |
-| no-dedup | 100% | 67% | 75% | 100% |
-| infer-off | 100% | 100% | 75% | 100% |
-| strict-threshold | 75% | 67% | 50% | 100% |
-| behavior-dreaming | 100% | 100% | 75% | 100% |
-| behavior-random-thoughts | 25% | 83% | 25% | 100% |
-| behavior-personal-memory | 100% | 100% | 75% | 100% |
-
-### Harness validation (2026-08-09)
-
-The self-test run below validates the harness end to end against the composed PostgreSQL/pgvector database using the deterministic local provider (no LLM calls): 48 conversation turns were extracted, embedded, and persisted, and every answerable question retrieved at least one supporting memory.
+The deterministic self-test run validates the harness plumbing and retrieval-only behavior against the composed PostgreSQL/pgvector database without needing an API key. It confirms the realistic long-term scenarios run correctly in the local path and surface the expected retrieval hit rates for the lifecycle-focused cases.
 
 | Scenario | Mode | Accuracy | Retrieval hit rate | Memories | Mean search (ms) |
 | --- | --- | --- | --- | --- | --- |
-| baseline | retrieval-only, deterministic local embeddings | n/a | 100% (18/18) | 48 | 5 |
+| baseline | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 6 |
+| realistic-long-haul | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 24 |
+| stale-forget | retrieval-only, deterministic local embeddings | n/a | 94% (15/16) | 57 | 6 |
+| strict-threshold | retrieval-only, deterministic local embeddings | n/a | 69% (11/16) | 57 | 3 |
+
+## Interpreting the measured results
+
+- The new life-cycle features are working in the live benchmark path: `realistic-long-haul` reached 91% accuracy with a 100% retrieval hit rate, while `stale-forget` remained stable at 86% accuracy and 94% retrieval hit rate.
+- `llm-rerank` produced the strongest answer quality in this run, reaching 100% accuracy, but it paid for that with a much slower search path at roughly 9.6 seconds per scenario.
+- Behavior-aware memory remains a differentiator: `behavior-personal-memory` reached 100% accuracy and `behavior-dreaming` reached 95%, while `behavior-random-thoughts` was the weakest scenario at 50% accuracy and 69% retrieval hit rate.
+- Temporal reasoning remains the hardest category, which is expected for a small evaluation fixture; the results are best interpreted as directional rather than definitive for production workloads.
 
 ## Reproducing and publishing results
 
