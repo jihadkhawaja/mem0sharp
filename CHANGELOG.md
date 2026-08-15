@@ -1,0 +1,135 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [v0.2.0] - 2026-08-15
+
+### ⚠️ Breaking Changes
+- **Storage Interface Consolidation**: Merged 8 fragmented storage interfaces (`IVectorMemoryStore`, `IBulkMemoryStore`, `IBatchMemoryStore`, `IAtomicMemoryStore`, `IBatchVectorMemoryStore`, `IMemoryHistoryStore`, `IResettableMemoryStore`) into a single cohesive [`IMemoryStore`](src/Mem0Sharp/Contracts/StorageContracts.cs).
+- **Embedding Generator Consolidation**: Merged `IBatchEmbeddingGenerator` into [`IEmbeddingGenerator`](src/Mem0Sharp/Contracts/EmbeddingContracts.cs) with default interface fallback.
+- **Memory Extractor Consolidation**: Merged `IBehaviorAwareMemoryExtractor` into [`IMemoryExtractor`](src/Mem0Sharp/Contracts/IntelligenceContracts.cs) with `ExtractAsync(messages, options, ct)`.
+- **Canonical Service Signatures**: Standardized [`IMemoryService`](src/Mem0Sharp/Contracts/ServiceContracts.cs) and `MemoryService` around canonical options records (`MemoryAddOptions`, `MemorySearchOptions`, `MemoryPageOptions`, `MemoryUpdate`).
+
+### Added
+- **SIMD Hardware Acceleration**: Integrated `System.Numerics.Tensors` across vector cosine similarity (`TensorPrimitives.CosineSimilarity`), vector normalization (`TensorPrimitives.Norm`), and vector scaling (`TensorPrimitives.Divide`).
+- **Native Qdrant REST Search**: Implemented native REST vector search via `POST collections/{name}/points/search` and `POST collections/{name}/points/search/batch` with payload filter translation.
+- **SQLite SQL Pushdown**: Pushed down `user_id`, `agent_id`, `run_id`, `scope`, `behavior`, `memory_type`, and `expires_at` filters directly into parameterized SQL `WHERE` clauses, streaming records via `IAsyncEnumerable<Memory>`.
+- **PostgreSQL Graph Store Query Pushdown**: Term pattern matching for graph boost calculations pushed down to database index scans with `ILIKE ANY($1)` instead of full table scans.
+- **Concurrent LLM Reranking**: Added bounded concurrent scoring with `Parallel.ForEachAsync` (`MaxDegreeOfParallelism = 8`) in `LlmReranker`.
+- **Reverse Index in In-Memory Entity Store**: Added reverse lookup index (`memoryId -> HashSet<string>`) to achieve $O(1)$ memory deletions.
+- **Resilient JSON Parsing**: Added markdown fence stripping (```` ```json ````) and JSON array slice extractors in `LlmMemoryExtractor` and `LlmGraphMemoryExtractor`.
+- **Strongly-Typed API DTOs**: Migrated `OpenAiCompatibleClient`, `AnthropicClient`, and `OllamaClient` from generic `JsonNode` heap allocations to strongly-typed DTO records and safe base URI combining.
+
+### Optimized
+- **BM25 Hybrid Search Complexity**: Precomputed document frequencies reduced BM25 search complexity from $O(D^2 \cdot T)$ to $O(D \cdot T)$ with zero-allocation span tokenization.
+- **In-Memory Streaming**: Removed unnecessary `Task.Yield()` state machine overhead in `InMemoryStore.GetAllAsync`.
+
+---
+
+## [v0.1.7] - 2026-08-15
+
+### Added
+- **Long-term memory lifecycle**:
+  - Recency-aware retrieval (`ApplyRecencyBias`) during search.
+  - Freshness filtering for newer vs. stale facts (`FreshnessWindow`).
+  - Stale memory forgetting (`ForgetStaleAsync`) for outdated or superseded facts.
+  - Preference consolidation (`ConsolidateAsync`) for preference drift and memory refinement.
+- **Enhanced evaluation suite**:
+  - Added realistic long-horizon (`realistic-long-haul`) and stale-forgetting (`stale-forget`) benchmark scenarios.
+  - Stricter threshold testing and multi-session behavioral memory evaluation.
+- Updated documentation and published benchmark results matching verified benchmark runs.
+
+---
+
+## [v0.1.6] - 2026-08-11
+
+### Added
+- **Package split**: Split persistence providers into separate NuGet packages:
+  - `Mem0Sharp` (dependency-free core)
+  - `Mem0Sharp.PostgreSQL`
+  - `Mem0Sharp.SQLite`
+- Atomic memory and history persistence for built-in stores.
+- Memory provenance with behavior-aware retrieval.
+- Factual search excludes associative memories by default.
+- Fail-closed entity and graph enrichment.
+- Updated OpenAI configuration defaults to `gpt-5.6-luna` (with `text-embedding-3-small` for embeddings).
+- External evaluation dataset support and confidence intervals.
+- Pinned SQLite runtime dependencies to patched versions.
+
+---
+
+## [v0.1.5] - 2026-08-01
+
+### Added
+- Configurable memory behaviors: `Normal`, `Dreaming`, `RandomThoughts`, and `PersonalMemory`.
+- Behavior-aware extraction through `IBehaviorAwareMemoryExtractor`.
+- Behavior and persona prompts for LLM-based memory extraction.
+- MCP support for `behavior` and `prompt` options in `add_memory`.
+- Runnable `MemoryBehaviors` sample.
+- Unit tests for memory behaviors and MCP integration.
+
+### Documentation
+- Expanded README and API documentation with memory behavior details.
+- Added getting-started guidance and examples for behavior-shaped memories.
+
+---
+
+## [v0.1.4] - 2026-08-01
+
+### Added
+- Qdrant memory store with configurable options.
+- Cohere, CrossEncoder, and ZeroEntropy reranker providers.
+- Anthropic and Ollama model clients.
+- Getting Started, Ollama, and Postgres/OpenAI samples.
+- YAML configuration for OpenAI integration tests.
+
+### Improved
+- Expanded batch memory operations and history persistence.
+- Enhanced PostgreSQL and OpenAI integration coverage.
+- Added provider and reranker tests.
+- Updated API, provider, persistence, parity, and onboarding documentation.
+
+---
+
+## [v0.1.3] - 2026-07-26
+
+### Added
+- PostgreSQL memory history tracking for update and delete operations.
+- Batch persistence through `SaveBatchAsync`.
+- PostgreSQL entity and graph relationship stores.
+- Expiration support with `expires_at` and `hash_value` fields.
+- Nested logical expressions and numeric comparisons in filtering.
+- `LlmMemoryConflictResolver` with resilient LLM response parsing.
+- Unit test coverage for LLM conflict resolution and expanded memory service scenarios.
+
+### Architecture
+- Reorganized project into application, contracts, domain, infrastructure, intelligence, telemetry, and transport layers.
+- Added explicit domain models and service contracts.
+- Added contributor guide (`CONTRIBUTING.md`) and security policy (`SECURITY.md`).
+
+---
+
+## [v0.1.2] - 2026-07-14
+
+### Changed
+- Updated copyright information and added `NOTICE` file for attribution.
+
+---
+
+## [v0.1.1] - 2026-07-13
+
+### Changed
+- Configured NuGet trusted publishing workflows.
+
+---
+
+## [v0.1.0] - 2026-07-13
+
+### Added
+- Initial release of Mem0Sharp: Long-term memory for AI applications in .NET with semantic search and replaceable embedding and storage providers.
+- GitHub Actions workflow for publishing NuGet packages and project metadata.

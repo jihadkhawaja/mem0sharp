@@ -15,9 +15,17 @@ public sealed class LlmGraphMemoryExtractor : IGraphMemoryExtractor
             new Message("system", "Extract factual relationships. Return only a JSON array of objects with source, relationship, and target string fields."),
             new Message("user", text)
         ], cancellationToken);
+        return ParseRelations(response);
+    }
+
+    internal static IReadOnlyList<ExtractedRelation> ParseRelations(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response)) return [];
+        var json = LlmMemoryExtractor.ExtractJsonArrayPayload(response);
+        if (string.IsNullOrWhiteSpace(json)) return [];
         try
         {
-            return JsonSerializer.Deserialize<ExtractedRelation[]>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+            return JsonSerializer.Deserialize<ExtractedRelation[]>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true }) ?? [];
         }
         catch (JsonException)
         {

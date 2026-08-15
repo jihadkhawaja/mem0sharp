@@ -416,6 +416,82 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task ConsolidateAsyncCreatesABehavioralSummaryFromRecentMemories()
+    {
+        var service = new MemoryService();
+        await service.AddAsync("Alice prefers dark mode and Vim in the editor.", "alice");
+        await service.AddAsync("Alice likes a terminal with a dark theme and keyboard shortcuts.", "alice");
+        await service.AddAsync("Alice often works late into the evening.", "alice");
+
+        var created = await service.ConsolidateAsync(new MemoryFilter(UserId: "alice"), maxItems: 3);
+
+        var summary = Assert.Single(created);
+        Assert.Equal("consolidated_memory", summary.MemoryType);
+        Assert.Contains("dark mode", summary.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Vim", summary.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("3", summary.Metadata["summary_source_count"]);
+    }
+
+    [Fact]
+    public async Task SearchUsesRecencyBiasToPreferFreshMemories()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store, embeddings: new ConstantEmbeddingGenerator());
+        var oldMemory = new Memory
+        {
+            Id = "old-memory",
+            Text = "Alice prefers the old editor layout.",
+            UserId = "alice",
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            Hash = "old-hash",
+            Metadata = new Dictionary<string, string>()
+        };
+        var newMemory = new Memory
+        {
+            Id = "new-memory",
+            Text = "Alice prefers dark mode and Vim.",
+            UserId = "alice",
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            Hash = "new-hash",
+            Metadata = new Dictionary<string, string>()
+        };
+
+        await store.SaveAsync(oldMemory);
+        await store.SaveAsync(newMemory);
+
+        var results = await service.SearchAsync("editor preferences", new MemorySearchOptions
+        {
+            Filter = new MemoryFilter(UserId: "alice"),
+            TopK = 2,
+            Threshold = 0,
+            RecencyBias = 0.9,
+            FreshnessWindow = TimeSpan.FromDays(40)
+        });
+
+        Assert.Equal("new-memory", results[0].Memory.Id);
+    }
+
+    [Fact]
+    public async Task ForgetStaleAsyncRemovesMemoriesPastRetentionWindow()
+    {
+        var store = new InMemoryStore();
+        var service = new MemoryService(store);
+        var oldId = (await service.AddAsync("stale preference", new MemoryAddOptions { UserId = "alice" })).Memories[0].Id;
+        var freshId = (await service.AddAsync("fresh preference", new MemoryAddOptions { UserId = "alice" })).Memories[0].Id;
+
+        var oldMemory = await service.GetAsync(oldId);
+        await store.SaveAsync(oldMemory! with { UpdatedAt = DateTimeOffset.UtcNow.AddDays(-30), CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) });
+
+        var removed = await service.ForgetStaleAsync(TimeSpan.FromDays(7), new MemoryFilter(UserId: "alice"));
+
+        Assert.Equal(1, removed);
+        Assert.Null(await service.GetAsync(oldId));
+        Assert.NotNull(await service.GetAsync(freshId));
+    }
+
+    [Fact]
     public void SynchronousFacadeWrapsTheAsyncServiceSurface()
     {
         var memory = new SynchronousMemoryService(new MemoryService(graphExtractor: new StubGraphExtractor(), graphStore: new InMemoryGraphStore()));
@@ -435,7 +511,7 @@ public sealed class MemoryServiceTests
 
     private sealed class ThrowingExtractor : IMemoryExtractor
     {
-        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Raw adds must not invoke the extractor.");
     }
 
@@ -448,6 +524,8 @@ public sealed class MemoryServiceTests
     private sealed class ConstantEmbeddingGenerator : IEmbeddingGenerator
     {
         public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<float>>([1, 0]);
+        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
     }
 
     private sealed class ReverseReranker : IMemoryReranker
@@ -486,7 +564,7 @@ public sealed class MemoryServiceTests
         }
     }
 
-    private sealed class CountingBatchEmbeddingGenerator : IBatchEmbeddingGenerator
+    private sealed class CountingBatchEmbeddingGenerator : IEmbeddingGenerator
     {
         public int BatchCalls { get; private set; }
         public int SingleCalls { get; private set; }
@@ -504,16 +582,15 @@ public sealed class MemoryServiceTests
         }
     }
 
-    private sealed class CountingBatchVectorStore : IBatchVectorMemoryStore
+    private sealed class CountingBatchVectorStore : IMemoryStore
     {
         private readonly Memory result = new() { Id = "result", Text = "batch result", UserId = "default_user" };
 
         public int BatchSearchCalls { get; private set; }
         public int SingleSearchCalls { get; private set; }
 
-        public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task SaveAsync(Memory memory, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task SaveBatchAsync(IReadOnlyList<MemoryVectorRecord> records, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveAsync(Memory memory, IReadOnlyList<float>? embedding = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => Task.FromResult<Memory?>(null);
         public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
@@ -521,7 +598,11 @@ public sealed class MemoryServiceTests
             await Task.CompletedTask;
             yield break;
         }
-        public Task DeleteAsync(string id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteAsync(string id, MemoryHistoryEntry? history = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<int> DeleteAllAsync(MemoryFilter? filter = null, IReadOnlyList<MemoryDeleteRecord>? records = null, CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>([]);
+        public Task ResetAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
         {
@@ -536,5 +617,4 @@ public sealed class MemoryServiceTests
             return Task.FromResult(results);
         }
     }
-
 }

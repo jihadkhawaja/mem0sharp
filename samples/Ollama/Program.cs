@@ -16,14 +16,17 @@ var added = await memory.AddAsync(
     new Message("user", "My name is Alice and I prefer dark mode."),
     new Message("assistant", "I will remember that.")
 ],
-userId: "alice");
+new MemoryAddOptions { UserId = "alice" });
 
 Console.WriteLine($"Extracted {added.Memories.Count} memories.");
 
 var results = await memory.SearchAsync(
     "What display theme does Alice prefer?",
-    new MemoryFilter(UserId: "alice"),
-    topK: 3);
+    new MemorySearchOptions
+    {
+        Filter = new MemoryFilter(UserId: "alice"),
+        TopK = 3
+    });
 
 foreach (var result in results)
 {

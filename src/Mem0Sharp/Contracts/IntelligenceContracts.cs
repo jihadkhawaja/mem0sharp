@@ -2,12 +2,7 @@ namespace Mem0Sharp;
 
 public interface IMemoryExtractor
 {
-    Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default);
-}
-
-public interface IBehaviorAwareMemoryExtractor : IMemoryExtractor
-{
-    Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 public interface IMemoryReranker

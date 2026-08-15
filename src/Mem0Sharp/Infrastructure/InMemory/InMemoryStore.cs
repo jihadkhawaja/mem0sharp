@@ -1,37 +1,37 @@
 using System.Collections.Concurrent;
+using System.Numerics.Tensors;
 
 namespace Mem0Sharp;
 
-public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IAtomicMemoryStore, IResettableMemoryStore
+public sealed class InMemoryStore : IMemoryStore
 {
     private readonly ConcurrentDictionary<string, Memory> memories = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, float[]> vectors = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentQueue<MemoryHistoryEntry>> history = new(StringComparer.Ordinal);
     private readonly object sync = new();
 
-    public Task SaveAsync(Memory memory, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        lock (sync) memories[memory.Id] = memory;
-        return Task.CompletedTask;
-    }
-
-    public Task SaveBatchAsync(IReadOnlyList<Memory> items, CancellationToken cancellationToken = default)
+    public Task SaveAsync(Memory memory, IReadOnlyList<float>? embedding = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (sync)
         {
-            foreach (var memory in items) memories[memory.Id] = memory;
+            memories[memory.Id] = memory;
+            if (embedding is not null) vectors[memory.Id] = embedding.ToArray();
         }
         return Task.CompletedTask;
     }
 
-    public Task SaveBatchWithHistoryAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
+    public Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (sync)
         {
-            foreach (var record in records) memories[record.Memory.Id] = record.Memory;
-            foreach (var record in records) SaveHistoryCore(record.History);
+            foreach (var record in records)
+            {
+                memories[record.Memory.Id] = record.Memory;
+                if (record.Embedding is not null) vectors[record.Memory.Id] = record.Embedding.ToArray();
+                SaveHistoryCore(record.History);
+            }
         }
         return Task.CompletedTask;
     }
@@ -45,55 +45,82 @@ public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IAtomic
 
     public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        foreach (var memory in memories.Values.OrderByDescending(item => item.UpdatedAt))
+        var list = memories.Values.OrderByDescending(item => item.UpdatedAt).ToArray();
+        foreach (var memory in list)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (MemoryFilterEvaluator.Matches(memory, filter))
             {
                 yield return memory;
             }
-            await Task.Yield();
         }
     }
 
-    public Task DeleteAsync(string id, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SearchResult>> SearchAsync(IReadOnlyList<float> embedding, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (sync) memories.TryRemove(id, out _);
-        return Task.CompletedTask;
+        if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
+        if (topK == 0) return Task.FromResult<IReadOnlyList<SearchResult>>([]);
+
+        var queryArr = embedding.ToArray();
+        var candidates = new List<SearchResult>();
+
+        foreach (var pair in memories)
+        {
+            if (!MemoryFilterEvaluator.Matches(pair.Value, filter)) continue;
+            var score = 0.0;
+            if (vectors.TryGetValue(pair.Key, out var vector) && vector.Length == queryArr.Length)
+            {
+                score = (double)TensorPrimitives.CosineSimilarity(queryArr, vector);
+            }
+            candidates.Add(new SearchResult(pair.Value, score));
+        }
+
+        IReadOnlyList<SearchResult> results = candidates
+            .OrderByDescending(r => r.Score)
+            .ThenByDescending(r => r.Memory.UpdatedAt)
+            .Take(topK)
+            .ToArray();
+
+        return Task.FromResult(results);
     }
 
-    public Task DeleteWithHistoryAsync(string id, MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
+    public Task DeleteAsync(string id, MemoryHistoryEntry? entry = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (sync)
         {
             memories.TryRemove(id, out _);
-            SaveHistoryCore(entry);
+            vectors.TryRemove(id, out _);
+            if (entry is not null) SaveHistoryCore(entry);
         }
         return Task.CompletedTask;
     }
 
-    public async Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
-    {
-        var matching = new List<string>();
-        await foreach (var memory in GetAllAsync(filter, cancellationToken)) matching.Add(memory.Id);
-        lock (sync)
-        {
-            foreach (var id in matching) memories.TryRemove(id, out _);
-        }
-        return matching.Count;
-    }
-
-    public Task DeleteAllWithHistoryAsync(IReadOnlyList<MemoryDeleteRecord> records, CancellationToken cancellationToken = default)
+    public Task<int> DeleteAllAsync(MemoryFilter? filter = null, IReadOnlyList<MemoryDeleteRecord>? records = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (sync)
         {
-            foreach (var record in records) memories.TryRemove(record.Memory.Id, out _);
-            foreach (var record in records) SaveHistoryCore(record.History);
+            if (records is not null)
+            {
+                foreach (var record in records)
+                {
+                    memories.TryRemove(record.Memory.Id, out _);
+                    vectors.TryRemove(record.Memory.Id, out _);
+                    SaveHistoryCore(record.History);
+                }
+                return Task.FromResult(records.Count);
+            }
+
+            var matching = memories.Values.Where(m => MemoryFilterEvaluator.Matches(m, filter)).Select(m => m.Id).ToArray();
+            foreach (var id in matching)
+            {
+                memories.TryRemove(id, out _);
+                vectors.TryRemove(id, out _);
+            }
+            return Task.FromResult(matching.Length);
         }
-        return Task.CompletedTask;
     }
 
     public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default)
@@ -116,6 +143,7 @@ public sealed class InMemoryStore : IBulkMemoryStore, IBatchMemoryStore, IAtomic
         lock (sync)
         {
             memories.Clear();
+            vectors.Clear();
             history.Clear();
         }
         return Task.CompletedTask;

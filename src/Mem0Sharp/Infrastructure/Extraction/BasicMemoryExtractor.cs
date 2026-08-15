@@ -2,7 +2,7 @@ namespace Mem0Sharp;
 
 public sealed class BasicMemoryExtractor : IMemoryExtractor
 {
-    public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var inputs = messages

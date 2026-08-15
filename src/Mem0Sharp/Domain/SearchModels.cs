@@ -18,6 +18,8 @@ public sealed record MemorySearchOptions
     public bool Hybrid { get; init; } = true;
     public MemoryBehavior? Behavior { get; init; }
     public bool IncludeNonFactual { get; init; }
+    public double RecencyBias { get; init; }
+    public TimeSpan? FreshnessWindow { get; init; }
 }
 
 public sealed record SearchScoreDetails(
@@ -30,5 +32,3 @@ public sealed record SearchScoreDetails(
     double Threshold = 0);
 
 public sealed record SearchResult(Memory Memory, double Score, SearchScoreDetails? ScoreDetails = null);
-
-public sealed record MemoryVectorRecord(Memory Memory, IReadOnlyList<float> Embedding);

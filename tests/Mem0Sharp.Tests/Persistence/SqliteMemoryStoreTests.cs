@@ -271,7 +271,7 @@ public sealed class SqliteMemoryStoreTests
             var second = Memory("second", "alice");
             var historyId = Guid.NewGuid().ToString("N");
 
-            await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.SaveBatchWithHistoryAsync([
+            await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.SaveBatchAsync([
                 new MemoryWriteRecord(first, [1, 0], History(historyId, first)),
                 new MemoryWriteRecord(second, [0, 1], History(historyId, second))
             ]));

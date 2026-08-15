@@ -11,12 +11,12 @@ LLM/provider variance.
 
 ## What it measures
 
-The harness runs a matrix of scenarios. Each scenario ingests two multi-session conversations (48 turns total) into fresh PostgreSQL tables, then answers 24 questions per scenario:
+The harness runs a matrix of scenarios. Each scenario ingests two multi-session conversations (48 turns total) into fresh PostgreSQL tables, then answers 22 questions per scenario:
 
 | Category | Questions | What it tests |
 | --- | --- | --- |
 | Single-hop | 8 | Recalling one stated fact |
-| Multi-hop | 6 | Combining two or more facts |
+| Multi-hop | 4 | Combining two or more facts |
 | Temporal | 4 | Reasoning about how facts changed over time |
 | Adversarial | 6 | Refusing to answer questions the conversations never cover |
 

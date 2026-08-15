@@ -156,17 +156,14 @@ public sealed class MemoryMcpServerTests
         Assert.Contains("entity_type must be user, agent, or run", error.Message);
     }
 
-    private sealed class RecordingBehaviorExtractor : IBehaviorAwareMemoryExtractor
+    private sealed class RecordingBehaviorExtractor : IMemoryExtractor
     {
         public MemoryAddOptions? Options { get; private set; }
 
-        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<MemoryInput>>([new MemoryInput("normal thought")]);
-
-        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
         {
             Options = options;
-            return Task.FromResult<IReadOnlyList<MemoryInput>>([new MemoryInput("shaped thought")]);
+            return Task.FromResult<IReadOnlyList<MemoryInput>>([new MemoryInput(options is not null ? "shaped thought" : "normal thought")]);
         }
     }
 }

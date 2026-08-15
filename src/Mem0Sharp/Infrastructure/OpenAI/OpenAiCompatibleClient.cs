@@ -1,11 +1,13 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Mem0Sharp;
 
-public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbeddingGenerator
+public sealed class OpenAiCompatibleClient : IChatCompletionClient, IEmbeddingGenerator
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient httpClient;
     private readonly string apiKey;
     private readonly string chatModel;
@@ -13,6 +15,8 @@ public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbedd
 
     public OpenAiCompatibleClient(HttpClient httpClient, string apiKey, string chatModel = "gpt-5-mini", string embeddingModel = "text-embedding-3-small")
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
         this.httpClient = httpClient;
         this.apiKey = apiKey;
         this.chatModel = chatModel;
@@ -21,15 +25,16 @@ public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbedd
 
     public async Task<string> CompleteAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+        var endpoint = BuildEndpoint("v1/chat/completions");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
-            Content = JsonContent.Create(new { model = chatModel, messages })
+            Content = JsonContent.Create(new { model = chatModel, messages }, options: JsonOptions)
         };
         AddAuthentication(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
-        return payload?["choices"]?[0]?["message"]?["content"]?.GetValue<string>() ?? string.Empty;
+        var payload = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>(JsonOptions, cancellationToken);
+        return payload?.Choices?.FirstOrDefault()?.Message?.Content ?? string.Empty;
     }
 
     public async Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
@@ -41,19 +46,31 @@ public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbedd
     public async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
     {
         if (texts.Count == 0) return [];
-        using var request = new HttpRequestMessage(HttpMethod.Post, "v1/embeddings")
+        var endpoint = BuildEndpoint("v1/embeddings");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
-            Content = JsonContent.Create(new { model = embeddingModel, input = texts })
+            Content = JsonContent.Create(new { model = embeddingModel, input = texts }, options: JsonOptions)
         };
         AddAuthentication(request);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
-        var data = payload?["data"]?.AsArray();
-        if (data is null) return [];
-        return data.OrderBy(item => item?["index"]?.GetValue<int>() ?? 0)
-            .Select(item => (IReadOnlyList<float>)(item?["embedding"]?.AsArray().Select(value => value?.GetValue<float>() ?? 0).ToArray() ?? []))
+        var payload = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(JsonOptions, cancellationToken);
+        var data = payload?.Data;
+        if (data is null || data.Length == 0) return [];
+        return data.OrderBy(item => item.Index)
+            .Select(item => (IReadOnlyList<float>)(item.Embedding ?? []))
             .ToArray();
+    }
+
+    private Uri BuildEndpoint(string relativePath)
+    {
+        if (httpClient.BaseAddress is null) return new Uri(relativePath, UriKind.Relative);
+        var baseStr = httpClient.BaseAddress.AbsoluteUri.TrimEnd('/');
+        if (baseStr.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) && relativePath.StartsWith("v1/", StringComparison.OrdinalIgnoreCase))
+        {
+            relativePath = relativePath[3..];
+        }
+        return new Uri($"{baseStr}/{relativePath.TrimStart('/')}");
     }
 
     private void AddAuthentication(HttpRequestMessage request)
@@ -67,4 +84,20 @@ public sealed class OpenAiCompatibleClient : IChatCompletionClient, IBatchEmbedd
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new HttpRequestException($"OpenAI-compatible request failed with {(int)response.StatusCode}: {body}");
     }
+
+    private sealed record ChatCompletionResponse(
+        [property: JsonPropertyName("choices")] ChatChoice[]? Choices);
+
+    private sealed record ChatChoice(
+        [property: JsonPropertyName("message")] ChatResponseMessage? Message);
+
+    private sealed record ChatResponseMessage(
+        [property: JsonPropertyName("content")] string? Content);
+
+    private sealed record EmbeddingResponse(
+        [property: JsonPropertyName("data")] EmbeddingItem[]? Data);
+
+    private sealed record EmbeddingItem(
+        [property: JsonPropertyName("index")] int Index,
+        [property: JsonPropertyName("embedding")] float[]? Embedding);
 }

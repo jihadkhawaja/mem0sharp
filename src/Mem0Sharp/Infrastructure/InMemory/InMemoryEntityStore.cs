@@ -5,17 +5,24 @@ namespace Mem0Sharp;
 public sealed class InMemoryEntityStore : IEntityStore
 {
     private readonly ConcurrentDictionary<string, EntityState> entities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, HashSet<string>> memoryToEntities = new(StringComparer.Ordinal);
+    private readonly object sync = new();
 
     public Task UpsertLinksAsync(IReadOnlyList<ExtractedEntity> extractedEntities, string memoryId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var extracted in extractedEntities)
+        lock (sync)
         {
-            var key = Normalize(extracted.Text);
-            entities.AddOrUpdate(
-                key,
-                _ => new EntityState(Guid.NewGuid().ToString("N"), extracted.Text.Trim(), extracted.Type, new HashSet<string>(StringComparer.Ordinal) { memoryId }),
-                (_, current) => current with { LinkedMemoryIds = current.LinkedMemoryIds.Append(memoryId).ToHashSet(StringComparer.Ordinal) });
+            var entityKeysForMemory = memoryToEntities.GetOrAdd(memoryId, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            foreach (var extracted in extractedEntities)
+            {
+                var key = Normalize(extracted.Text);
+                entityKeysForMemory.Add(key);
+                entities.AddOrUpdate(
+                    key,
+                    _ => new EntityState(Guid.NewGuid().ToString("N"), extracted.Text.Trim(), extracted.Type, new HashSet<string>(StringComparer.Ordinal) { memoryId }),
+                    (_, current) => current with { LinkedMemoryIds = current.LinkedMemoryIds.Append(memoryId).ToHashSet(StringComparer.Ordinal) });
+            }
         }
         return Task.CompletedTask;
     }
@@ -23,11 +30,18 @@ public sealed class InMemoryEntityStore : IEntityStore
     public Task RemoveMemoryAsync(string memoryId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var pair in entities)
+        lock (sync)
         {
-            var links = pair.Value.LinkedMemoryIds.Where(id => id != memoryId).ToHashSet(StringComparer.Ordinal);
-            if (links.Count == 0) entities.TryRemove(pair.Key, out _);
-            else entities[pair.Key] = pair.Value with { LinkedMemoryIds = links };
+            if (memoryToEntities.TryRemove(memoryId, out var linkedKeys))
+            {
+                foreach (var key in linkedKeys)
+                {
+                    if (!entities.TryGetValue(key, out var entity)) continue;
+                    var links = entity.LinkedMemoryIds.Where(id => id != memoryId).ToHashSet(StringComparer.Ordinal);
+                    if (links.Count == 0) entities.TryRemove(key, out _);
+                    else entities[key] = entity with { LinkedMemoryIds = links };
+                }
+            }
         }
         return Task.CompletedTask;
     }
@@ -58,7 +72,11 @@ public sealed class InMemoryEntityStore : IEntityStore
     public Task ResetAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        entities.Clear();
+        lock (sync)
+        {
+            entities.Clear();
+            memoryToEntities.Clear();
+        }
         return Task.CompletedTask;
     }
 

@@ -7,7 +7,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Mem0Sharp.SQLite</PackageId>
-    <Version>0.1.6</Version>
+    <Version>0.2.0</Version>
     <Authors>mem0sharp contributors</Authors>
     <Description>SQLite persistence provider for Mem0Sharp.</Description>
     <PackageTags>ai;memory;agents;sqlite;mem0sharp</PackageTags>
@@ -16,6 +16,7 @@
     <RepositoryUrl>https://github.com/jihadkhawaja/mem0sharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mem0Sharp\Mem0Sharp.csproj" />
@@ -23,6 +24,7 @@
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="icon.png" />
     <None Include="README.md" Pack="true" PackagePath="README.md" />
     <None Include="..\..\NOTICE" Pack="true" PackagePath="NOTICE" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="LICENSE" />

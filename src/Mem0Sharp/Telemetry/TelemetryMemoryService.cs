@@ -11,43 +11,32 @@ public sealed class TelemetryMemoryService : IMemoryService
         this.telemetry = telemetry;
     }
 
-    public Task<AddResult> AddAsync(string text, string userId = "default_user", string? agentId = null, string? runId = null, MemoryScope scope = MemoryScope.User, IReadOnlyDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(text, userId, agentId, runId, scope, metadata, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "text", ["scope"] = scope.ToString() }, cancellationToken);
+    public Task<AddResult> AddAsync(string text, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
+        CaptureAsync<AddResult>("mem0.add", () => inner.AddAsync(text, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "text", ["infer"] = options?.Infer, ["behavior"] = options?.Behavior.ToString() }, cancellationToken);
 
-    public Task<AddResult> AddAsync(IEnumerable<Message> messages, string userId = "default_user", string? agentId = null, string? runId = null, MemoryScope scope = MemoryScope.User, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(messages, userId, agentId, runId, scope, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["scope"] = scope.ToString() }, cancellationToken);
-
-    public Task<AddResult> AddAsync(string text, MemoryAddOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(text, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "text", ["infer"] = options.Infer, ["behavior"] = options.Behavior.ToString() }, cancellationToken);
-
-    public Task<AddResult> AddAsync(IEnumerable<Message> messages, MemoryAddOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add", () => inner.AddAsync(messages, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["infer"] = options.Infer, ["behavior"] = options.Behavior.ToString() }, cancellationToken);
+    public Task<AddResult> AddAsync(IEnumerable<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
+        CaptureAsync<AddResult>("mem0.add", () => inner.AddAsync(messages, options, cancellationToken), new Dictionary<string, object?> { ["input_type"] = "messages", ["infer"] = options?.Infer, ["behavior"] = options?.Behavior.ToString() }, cancellationToken);
 
     public Task<AddResult> AddManyAsync(IEnumerable<string> texts, MemoryAddOptions? options = null, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.add_many", () => inner.AddManyAsync(texts, options, cancellationToken), cancellationToken: cancellationToken);
+        CaptureAsync<AddResult>("mem0.add_many", () => inner.AddManyAsync(texts, options, cancellationToken), cancellationToken: cancellationToken);
 
-    public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, MemoryFilter? filter = null, int? topK = null, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.search", () => inner.SearchAsync(query, filter, topK, cancellationToken), new Dictionary<string, object?> { ["top_k"] = topK }, cancellationToken);
+    public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, MemorySearchOptions? options = null, CancellationToken cancellationToken = default) =>
+        CaptureAsync<IReadOnlyList<SearchResult>>("mem0.search", () => inner.SearchAsync(query, options, cancellationToken), new Dictionary<string, object?> { ["top_k"] = options?.TopK, ["rerank"] = options?.Rerank, ["explain"] = options?.Explain }, cancellationToken);
 
-    public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, MemorySearchOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.search", () => inner.SearchAsync(query, options, cancellationToken), new Dictionary<string, object?> { ["top_k"] = options.TopK, ["rerank"] = options.Rerank, ["explain"] = options.Explain }, cancellationToken);
+    public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemorySearchOptions? options = null, CancellationToken cancellationToken = default) =>
+        CaptureAsync<IReadOnlyList<IReadOnlyList<SearchResult>>>("mem0.search_many", () => inner.SearchManyAsync(queries, options, cancellationToken), new Dictionary<string, object?> { ["top_k"] = options?.TopK, ["include_non_factual"] = options?.IncludeNonFactual }, cancellationToken);
 
-    public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemoryFilter? filter = null, int? topK = null, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.search_many", () => inner.SearchManyAsync(queries, filter, topK, cancellationToken), cancellationToken: cancellationToken);
-
-    public Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemorySearchOptions options, CancellationToken cancellationToken = default) =>
-        CaptureAsync("mem0.search_many", () => inner.SearchManyAsync(queries, options, cancellationToken), new Dictionary<string, object?> { ["top_k"] = options.TopK, ["include_non_factual"] = options.IncludeNonFactual }, cancellationToken);
-
-    public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get", () => inner.GetAsync(id, cancellationToken), cancellationToken: cancellationToken);
-    public Task<IReadOnlyList<Memory>> GetAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get_all", () => inner.GetAllAsync(filter, cancellationToken), cancellationToken: cancellationToken);
-    public Task<MemoryPage> GetPageAsync(MemoryPageOptions options, MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.get_page", () => inner.GetPageAsync(options, filter, cancellationToken), cancellationToken: cancellationToken);
-    public Task<Memory> UpdateAsync(string id, string text, IReadOnlyDictionary<string, string>? metadata = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.update", () => inner.UpdateAsync(id, text, metadata, cancellationToken), cancellationToken: cancellationToken);
-    public Task<Memory> UpdateAsync(string id, MemoryUpdate update, CancellationToken cancellationToken = default) => CaptureAsync("mem0.update", () => inner.UpdateAsync(id, update, cancellationToken), cancellationToken: cancellationToken);
+    public Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync<Memory?>("mem0.get", () => inner.GetAsync(id, cancellationToken), cancellationToken: cancellationToken);
+    public Task<IReadOnlyList<Memory>> GetAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync<IReadOnlyList<Memory>>("mem0.get_all", () => inner.GetAllAsync(filter, cancellationToken), cancellationToken: cancellationToken);
+    public Task<MemoryPage> GetPageAsync(MemoryPageOptions options, MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync<MemoryPage>("mem0.get_page", () => inner.GetPageAsync(options, filter, cancellationToken), cancellationToken: cancellationToken);
+    public Task<Memory> UpdateAsync(string id, MemoryUpdate update, CancellationToken cancellationToken = default) => CaptureAsync<Memory>("mem0.update", () => inner.UpdateAsync(id, update, cancellationToken), cancellationToken: cancellationToken);
     public Task DeleteAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync("mem0.delete", () => inner.DeleteAsync(id, cancellationToken), cancellationToken: cancellationToken);
-    public Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.delete_all", () => inner.DeleteAllAsync(filter, cancellationToken), cancellationToken: cancellationToken);
-    public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync("mem0.history", () => inner.GetHistoryAsync(id, cancellationToken), cancellationToken: cancellationToken);
+    public Task<int> DeleteAllAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync<int>("mem0.delete_all", () => inner.DeleteAllAsync(filter, cancellationToken), cancellationToken: cancellationToken);
+    public Task<int> ForgetStaleAsync(TimeSpan retentionWindow, MemoryFilter? filter = null, CancellationToken cancellationToken = default) => CaptureAsync<int>("mem0.forget_stale", () => inner.ForgetStaleAsync(retentionWindow, filter, cancellationToken), new Dictionary<string, object?> { ["retention_window_hours"] = retentionWindow.TotalHours }, cancellationToken);
+    public Task<IReadOnlyList<Memory>> ConsolidateAsync(MemoryFilter? filter = null, int maxItems = 10, CancellationToken cancellationToken = default) => CaptureAsync<IReadOnlyList<Memory>>("mem0.consolidate", () => inner.ConsolidateAsync(filter, maxItems, cancellationToken), new Dictionary<string, object?> { ["max_items"] = maxItems }, cancellationToken);
+    public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string id, CancellationToken cancellationToken = default) => CaptureAsync<IReadOnlyList<MemoryHistoryEntry>>("mem0.history", () => inner.GetHistoryAsync(id, cancellationToken), cancellationToken: cancellationToken);
     public Task ResetAsync(CancellationToken cancellationToken = default) => CaptureAsync("mem0.reset", () => inner.ResetAsync(cancellationToken), cancellationToken: cancellationToken);
-    public Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default) => CaptureAsync("mem0.graph", () => inner.GetRelationsAsync(query, cancellationToken), cancellationToken: cancellationToken);
+    public Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default) => CaptureAsync<IReadOnlyList<MemoryRelation>>("mem0.graph", () => inner.GetRelationsAsync(query, cancellationToken), cancellationToken: cancellationToken);
 
     private async Task<T> CaptureAsync<T>(string name, Func<Task<T>> operation, IReadOnlyDictionary<string, object?>? properties = null, CancellationToken cancellationToken = default)
     {
