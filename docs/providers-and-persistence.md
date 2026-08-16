@@ -1,246 +1,111 @@
 # Providers and persistence
 
-Mem0Sharp separates the service API from embeddings, extraction, and storage. This lets the same application code run locally with deterministic components and in production with model-backed embeddings and a persistent database.
+Mem0Sharp standardizes entirely on **`Microsoft.Extensions.AI`** (`IChatClient` and `IEmbeddingGenerator<string, Embedding<float>>`) for all intelligence and embedding operations, while keeping the storage layer swappable across in-memory, SQLite, PostgreSQL/pgvector, and Qdrant.
 
-## Available providers
+## Available model and storage ecosystems
 
-| Capability | Built-in providers |
+| Capability | Ecosystem Integrations |
 | --- | --- |
-| Chat completion | OpenAI-compatible APIs, Anthropic Messages, Ollama |
-| Embeddings | Deterministic local, OpenAI-compatible APIs, Ollama |
-| Vector storage | In-memory and Qdrant in core; SQLite and PostgreSQL/pgvector in optional provider packages |
-| Reranking | LLM, Cohere, ZeroEntropy, local cross-encoder |
-| Entity and graph storage | In-memory, PostgreSQL |
+| **Chat & Extraction** | Any `Microsoft.Extensions.AI.IChatClient` (OpenAI, Azure, [OllamaSharp](https://github.com/awaescher/OllamaSharp), Google Gemini, ONNX Runtime GenAI, Anthropic, Mistral) |
+| **Embeddings** | Any `Microsoft.Extensions.AI.IEmbeddingGenerator<string, Embedding<float>>` (OpenAI, OllamaSharp, ONNX embeddings, deterministic local) |
+| **Vector storage** | In-memory and Qdrant in core; SQLite and PostgreSQL/pgvector in dedicated packages |
+| **Reranking** | Any `IChatClient` (via `LlmReranker`), Cohere, ZeroEntropy, local cross-encoders |
+| **Security & Governance** | `IAdmissionGate` (Prompt injection filter, scope authority, novelty gate) |
+| **Anti-Drift Verifier** | `IConsolidationVerifier` (`LlmConsolidationVerifier`, `HeuristicConsolidationVerifier`) |
+| **Trajectory Logging** | `ITrajectoryStore` (`InMemoryTrajectoryStore` for STONE deferred extraction) |
 
-All providers are replaceable through the public contracts. The model adapters use caller-owned `HttpClient` instances; custom providers can target other hosted services or local runtimes without adding an SDK dependency to the core package.
+---
 
-## Dependency boundary
+## 1. OpenAI / Azure OpenAI
 
-The `Mem0Sharp` package has no runtime database dependencies. Install
-`Mem0Sharp.PostgreSQL` for PostgreSQL/pgvector and relationship stores, or
-`Mem0Sharp.SQLite` for the managed-cosine SQLite store. Each provider package
-contains its own database dependencies; `InMemoryStore`,
-`LocalEmbeddingGenerator`, the service API, and the provider interfaces use
-.NET 10 and the base class libraries without external services.
+Use the official `OpenAI` and `Microsoft.Extensions.AI.OpenAI` packages:
 
-```powershell
-dotnet add package Mem0Sharp.PostgreSQL
-dotnet add package Mem0Sharp.SQLite
+```csharp
+using System.ClientModel;
+using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OpenAI;
+
+var openAiClient = new OpenAIClient(
+    new ApiKeyCredential(Environment.GetEnvironmentVariable("OPENAI_API_KEY")!));
+
+var chatClient = openAiClient.GetChatClient("gpt-5.6-luna").AsIChatClient();
+var embeddings = openAiClient.GetEmbeddingClient("text-embedding-3-small").AsIEmbeddingGenerator();
+
+var memory = new MemoryService(
+    embeddings: embeddings,
+    extractor: new LlmMemoryExtractor(chatClient));
 ```
 
-`OpenAiCompatibleClient` uses the `HttpClient` provided by .NET. It does not
-introduce an OpenAI SDK dependency, and it can be replaced with custom
-implementations of `IEmbeddingGenerator` and `IChatCompletionClient` for
-another endpoint or an offline deployment.
+---
 
-`AnthropicClient`, `OllamaClient`, and `QdrantMemoryStore` also use caller-owned `HttpClient` instances. Dispose those clients according to the lifetime chosen by the application; the providers do not dispose shared clients.
+## 2. Ollama (via OllamaSharp)
 
-## OpenAI-compatible provider
+Use [OllamaSharp](https://github.com/awaescher/OllamaSharp), the official active library for Ollama in .NET:
 
-`OpenAiCompatibleClient` implements both `IEmbeddingGenerator` and `IChatCompletionClient`. It sends requests to the `v1/embeddings` and `v1/chat/completions` paths relative to the supplied `HttpClient.BaseAddress`.
+```powershell
+dotnet add package OllamaSharp
+```
 
 ```csharp
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OllamaSharp;
 
-using var httpClient = new HttpClient
-{
-    BaseAddress = new Uri("https://api.openai.com/")
-};
-
-var provider = new OpenAiCompatibleClient(
-    httpClient,
-    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!,
-    chatModel: "gpt-5-mini",
-    embeddingModel: "text-embedding-3-small");
+var endpoint = new Uri("http://localhost:11434/");
+var ollama = new OllamaApiClient(endpoint, "llama3.2");
 
 var memory = new MemoryService(
-    embeddings: provider,
-    extractor: new LlmMemoryExtractor(provider));
+    embeddings: (IEmbeddingGenerator<string, Embedding<float>>)ollama,
+    extractor: new LlmMemoryExtractor((IChatClient)ollama));
 ```
 
-The provider also works with compatible hosted or local servers. Set `BaseAddress` to the provider root and choose model names accepted by that server. The API key is sent as a Bearer token.
+---
 
-Keep the embedding model consistent for the lifetime of a vector store. Changing embedding models generally changes vector dimensions and makes existing vectors incompatible with the configured PostgreSQL column.
+## 3. ONNX Runtime GenAI (Local On-Device Inference)
 
-## Anthropic and Ollama
-
-`AnthropicClient` implements Anthropic's native Messages protocol, including the separate system prompt and required API headers:
+Run 100% private, on-device SLM extraction (Phi-3.5 / Phi-4 / Llama 3.2 ONNX) without daemons or cloud endpoints. See the official [Microsoft Agent Framework ONNX Guide](https://learn.microsoft.com/en-us/agent-framework/integrations/by-component/model-providers/onnx):
 
 ```csharp
-var anthropic = new AnthropicClient(
-    new HttpClient(),
-    Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!,
-    model: "claude-sonnet-4-5");
+using Mem0Sharp;
+using Microsoft.Extensions.AI;
 
-var memory = new MemoryService(extractor: new LlmMemoryExtractor(anthropic));
-```
-
-`OllamaClient` implements native `/api/chat` and `/api/embed` requests and supports batch embeddings without an API key:
-
-```csharp
-var ollama = new OllamaClient(
-    new HttpClient(),
-    chatModel: "llama3.2",
-    embeddingModel: "nomic-embed-text",
-    endpoint: new Uri("http://localhost:11434/"));
-
+// Wrap onnx model in an IChatClient and embedding model in an IEmbeddingGenerator
 var memory = new MemoryService(
-    embeddings: ollama,
-    extractor: new LlmMemoryExtractor(ollama));
+    embeddings: new LocalEmbeddingGenerator(384),
+    extractor: new LlmMemoryExtractor(onnxChatClient));
 ```
 
-The Ollama embedding provider rejects missing batches, mismatched batch counts, and inconsistent vector dimensions before data reaches a vector store.
+---
 
-## Reranking providers
+## 4. PostgreSQL / pgvector Persistence
 
-Set a reranker on `MemoryService` and enable `Rerank` for searches that should use it:
-
-```csharp
-using var rerankClient = new HttpClient();
-var reranker = new CohereReranker(
-    rerankClient,
-    Environment.GetEnvironmentVariable("COHERE_API_KEY")!);
-
-var memory = new MemoryService(reranker: reranker);
-var results = await memory.SearchAsync("editor preferences", new MemorySearchOptions
-{
-    Rerank = true,
-    Explain = true
-});
-```
-
-`CohereReranker` uses Cohere's `v1/rerank` endpoint and defaults to `rerank-v3.5`. `ZeroEntropyReranker` uses `v1/models/rerank` and defaults to `zerank-1`. Both use bearer authentication, preserve the original memory by response index, clamp relevance scores to the range from 0 to 1, and expose the provider score through `SearchScoreDetails.Reranker`.
-
-`LlmReranker` works with any `IChatCompletionClient`. For local Hugging Face, Sentence Transformers, ONNX, or another cross-encoder runtime, implement `ICrossEncoderScorer` and pass it to `CrossEncoderReranker`. Set `normalizeScores` to `true` for raw logits that need sigmoid normalization, or `false` for scores already normalized by the model runtime. This keeps heavyweight model dependencies outside the core package.
-
-## PostgreSQL and pgvector
-
-Install `Mem0Sharp.PostgreSQL` alongside `Mem0Sharp`:
+Install the provider package:
 
 ```powershell
 dotnet add package Mem0Sharp.PostgreSQL
 ```
 
-`PostgresMemoryStore` persists memory fields and embeddings in PostgreSQL. Install PostgreSQL with the `vector` extension available, then initialize the store once before using it:
-
-PostgreSQL and the `vector` extension are external infrastructure. They are
-required only for the persistent PostgreSQL stores; the in-memory store does
-not require a database server.
-
 ```csharp
-using var httpClient = new HttpClient
-{
-    BaseAddress = new Uri("https://api.openai.com/")
-};
-var provider = new OpenAiCompatibleClient(
-    httpClient,
-    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!);
-
 await using var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
 {
-    ConnectionString = Environment.GetEnvironmentVariable("MEM0_POSTGRES")!,
+    ConnectionString = "Host=localhost;Database=mem0;Username=postgres;Password=postgres",
     EmbeddingDimensions = 1536,
-    TableName = "mem0_memories",
-    UseHnswIndex = true,
-    CreateExtension = true
-});
-
-await store.InitializeAsync();
-
-var entityStore = new PostgresEntityStore(new PostgresMemoryStoreOptions
-{
-    ConnectionString = Environment.GetEnvironmentVariable("MEM0_POSTGRES")!,
-    EmbeddingDimensions = 1536,
-    TableName = "mem0_memories"
-});
-var graphStore = new PostgresGraphStore(new PostgresMemoryStoreOptions
-{
-    ConnectionString = Environment.GetEnvironmentVariable("MEM0_POSTGRES")!,
-    EmbeddingDimensions = 1536,
-    TableName = "mem0_memories"
-});
-await entityStore.InitializeAsync();
-await graphStore.InitializeAsync();
-
-var memory = new MemoryService(
-    store: store,
-    embeddings: provider,
-    extractor: new LlmMemoryExtractor(provider),
-    entityStore: entityStore,
-    graphExtractor: new LlmGraphMemoryExtractor(provider),
-    graphStore: graphStore);
-```
-
-See the runnable [PostgreSQL and OpenAI sample](../samples/PostgresOpenAI/README.md) for Docker setup, environment variables, and a complete search workflow.
-
-`EmbeddingDimensions` must exactly match the number of values returned by the embedding provider. The default OpenAI `text-embedding-3-small` model returns 1536 dimensions.
-
-Memory-store initialization creates the memory table, a `<TableName>_history` audit table, their indexes, and an HNSW cosine index when enabled and supported. History rows preserve the memory creation time separately from the event time, deletion state, actor ID, and role. Initialization upgrades older history tables with these fields and preserves existing events. The relationship stores create `<TableName>_entities` and `<TableName>_relations`. HNSW creation is skipped automatically when the configured dimension is greater than 2000. Set `UseHnswIndex` to `false` when an HNSW index is not wanted.
-
-Set `CreateExtension = false` when the database user cannot create extensions and the `vector` extension has already been installed by an administrator.
-
-The table name must be a simple PostgreSQL identifier containing letters, numbers, and underscores, and beginning with a letter or underscore.
-
-## SQLite
-
-Install `Mem0Sharp.SQLite` alongside `Mem0Sharp`:
-
-```powershell
-dotnet add package Mem0Sharp.SQLite
-```
-
-`SqliteMemoryStore` persists embeddings as portable BLOBs and implements cosine similarity in managed code. It requires no SQLite vector extension and is suitable for local applications and small to medium datasets where a scan of stored vectors is acceptable:
-
-```csharp
-await using var store = new SqliteMemoryStore("data/mem0sharp.db");
-await store.InitializeAsync();
-
-var memory = new MemoryService(
-    store: store,
-    embeddings: new LocalEmbeddingGenerator(384));
-```
-
-The SQLite memory and history tables use the same normalized column names as the PostgreSQL store, including `text_value`, `user_id`, `metadata`, `created_at`, `expires_at`, `hash_value`, `behavior`, `memory_type`, and the explicit history event fields. Metadata is stored as JSON text and embeddings are stored as portable BLOBs because SQLite has no required vector type; cosine similarity is evaluated in managed code. Initialization adds the provenance columns to older normalized Mem0Sharp tables with safe defaults; older JSON-backed schemas are not supported. For large collections or indexed approximate search, use PostgreSQL/pgvector, Qdrant, or a custom `IVectorMemoryStore` backed by a SQLite vector extension.
-
-## Qdrant
-
-`QdrantMemoryStore` provides persistent vector storage through Qdrant's REST API:
-
-```csharp
-using var qdrantClient = new HttpClient();
-var store = new QdrantMemoryStore(qdrantClient, new QdrantMemoryStoreOptions
-{
-    Endpoint = new Uri("http://localhost:6333/"),
-    CollectionName = "mem0_memories",
-    EmbeddingDimensions = 384,
-    ApiKey = Environment.GetEnvironmentVariable("QDRANT_API_KEY")
+    TableName = "agent_memories"
 });
 await store.InitializeAsync();
 
-var memory = new MemoryService(store, new LocalEmbeddingGenerator(384));
+var memory = new MemoryService(store: store, embeddings: embeddings, extractor: extractor);
 ```
 
-Qdrant stores memory payloads and vectors remotely. Mem0Sharp pages the persisted points and applies the same nested filter evaluator and cosine scoring used by the local path, preserving all filter operators and deterministic semantics. This favors behavioral parity over server-side approximate-query throughput; custom `IVectorMemoryStore` implementations can use native Qdrant query filters when workload-specific optimization is required.
+---
 
-## Custom providers and stores
+## 5. Point-in-Time State Rollback & Recovery (VMG)
 
-Implement `IEmbeddingGenerator` to connect another embedding service:
+All persistent stores support rollback to previous timestamps or historical mutation checkpoints:
 
 ```csharp
-public sealed class MyEmbeddingGenerator : IEmbeddingGenerator
-{
-    public Task<IReadOnlyList<float>> GenerateAsync(
-        string text,
-        CancellationToken cancellationToken = default)
-    {
-        // Call the embedding service and return one vector for text.
-        throw new NotImplementedException();
-    }
-}
+// Roll back memory state to yesterday
+var rollbackResult = await memory.RollbackAsync(DateTimeOffset.UtcNow.AddDays(-1));
+Console.WriteLine($"Restored {rollbackResult.RestoredCount} memories.");
 ```
-
-Implement `IMemoryStore` for CRUD storage. Add `IVectorMemoryStore` when the store can perform similarity search itself; otherwise `MemoryService` uses its local vector cache and scans up to `MaxCandidateCount` memories. Add `IBulkMemoryStore` when filtered deletion can be performed efficiently by the backend. Add `IMemoryHistoryStore` to retain `ADD`, `UPDATE`, and `DELETE` events and support `GetHistoryAsync`. Add `IAtomicMemoryStore` when the backend can commit memory rows and history events in one transaction; this is the consistency boundary used by the built-in stores.
-
-All custom implementations should honor cancellation tokens and return vectors with a stable dimension.
-
-These providers are native C# persistence components. They do not call Mem0 Platform. `OpenAiCompatibleClient` is optional and only supplies model inference; use `LocalEmbeddingGenerator`, `BasicMemoryExtractor`, and custom local provider implementations to keep all inference offline.

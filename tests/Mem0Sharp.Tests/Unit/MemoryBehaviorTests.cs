@@ -1,4 +1,5 @@
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace Mem0Sharp.Tests;
@@ -21,7 +22,7 @@ public sealed class MemoryBehaviorTests
 
         Assert.Equal(
             "Extract durable user facts from the conversation. Return only a JSON array of strings. Ignore greetings, questions, and temporary requests.",
-            client.Messages[0].Content);
+            client.Messages[0].Text);
     }
 
     [Theory]
@@ -38,8 +39,8 @@ public sealed class MemoryBehaviorTests
             new MemoryAddOptions { Behavior = behavior, Prompt = "You are a curious, optimistic research assistant." });
 
         Assert.Equal("A shaped memory", Assert.Single(memories).Text);
-        Assert.Contains(expectedInstruction, client.Messages[0].Content);
-        Assert.Contains("curious, optimistic research assistant", client.Messages[0].Content);
+        Assert.Contains(expectedInstruction, client.Messages[0].Text);
+        Assert.Contains("curious, optimistic research assistant", client.Messages[0].Text);
     }
 
     [Fact]
@@ -56,7 +57,7 @@ public sealed class MemoryBehaviorTests
         });
 
         Assert.Equal("I noticed that Alice values quiet mornings.", Assert.Single(result.Memories).Text);
-        Assert.Equal("user", client.Messages[1].Role);
+        Assert.Equal(ChatRole.User, client.Messages[1].Role);
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public sealed class MemoryBehaviorTests
             new MemoryAddOptions { Behavior = MemoryBehavior.RandomThoughts });
 
         Assert.Single(inputs);
-        Assert.Contains(client.Messages, m => m.Role == "system" && m.Content.Contains("spontaneous thoughts"));
+        Assert.Contains(client.Messages, m => m.Role == ChatRole.System && (m.Text ?? "").Contains("spontaneous thoughts"));
     }
 
     [Fact]
@@ -98,17 +99,34 @@ public sealed class MemoryBehaviorTests
             [],
             new MemoryAddOptions { Behavior = MemoryBehavior.Dreaming });
 
-        Assert.Contains("dream-like memory consolidation", client.Messages[0].Content);
+        Assert.Contains("dream-like memory consolidation", client.Messages[0].Text);
     }
 
-    private sealed class RecordingChatClient(string response) : IChatCompletionClient
+    private sealed class RecordingChatClient(string response) : IChatClient
     {
-        public IReadOnlyList<Message> Messages { get; private set; } = [];
+        public IReadOnlyList<ChatMessage> Messages { get; private set; } = [];
 
-        public Task<string> CompleteAsync(IReadOnlyList<Message> messages, CancellationToken cancellationToken = default)
+        public ChatClientMetadata Metadata { get; } = new("RecordingChatClient");
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
         {
-            Messages = messages;
-            return Task.FromResult(response);
+            Messages = chatMessages.ToArray();
+            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, response)));
         }
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate { Contents = [new TextContent(response)] };
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 }

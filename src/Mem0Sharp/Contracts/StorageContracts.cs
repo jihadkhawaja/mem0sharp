@@ -24,5 +24,11 @@ public interface IMemoryStore
     }
     Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MemoryHistoryEntry>> GetAllHistoryAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>([]);
+    Task<RollbackResult> RollbackAsync(DateTimeOffset pointInTime, MemoryFilter? filter = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new RollbackResult(0, 0, []));
+    Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new RollbackResult(0, 0, []));
     Task ResetAsync(CancellationToken cancellationToken = default);
 }

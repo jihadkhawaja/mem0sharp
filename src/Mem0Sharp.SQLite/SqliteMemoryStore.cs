@@ -230,6 +230,129 @@ public sealed class SqliteMemoryStore : IMemoryStore, IAsyncDisposable
         return entries;
     }
 
+    public async Task<IReadOnlyList<MemoryHistoryEntry>> GetAllHistoryAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {HistoryColumns} FROM memory_history ORDER BY updated_at ASC, rowid ASC";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var entries = new List<MemoryHistoryEntry>();
+        while (await reader.ReadAsync(cancellationToken)) entries.Add(ReadHistory(reader));
+        return entries;
+    }
+
+    public async Task<RollbackResult> RollbackAsync(DateTimeOffset pointInTime, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var idsCommand = connection.CreateCommand();
+        idsCommand.Transaction = transaction;
+        idsCommand.CommandText = "SELECT DISTINCT memory_id FROM memory_history";
+        var memoryIds = new List<string>();
+        await using (var reader = await idsCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                memoryIds.Add(reader.GetString(0));
+            }
+        }
+
+        var restored = 0;
+        var deleted = 0;
+        var affected = new HashSet<string>(StringComparer.Ordinal);
+        var targetTimeStr = FormatTimestamp(pointInTime);
+
+        foreach (var memoryId in memoryIds)
+        {
+            await using var historyCommand = connection.CreateCommand();
+            historyCommand.Transaction = transaction;
+            historyCommand.CommandText = $"SELECT {HistoryColumns} FROM memory_history WHERE memory_id = $id AND updated_at <= $target ORDER BY updated_at DESC, rowid DESC LIMIT 1";
+            historyCommand.Parameters.AddWithValue("$id", memoryId);
+            historyCommand.Parameters.AddWithValue("$target", targetTimeStr);
+
+            MemoryHistoryEntry? lastEntry = null;
+            await using (var reader = await historyCommand.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    lastEntry = ReadHistory(reader);
+                }
+            }
+
+            if (lastEntry is null || lastEntry.IsDeleted || lastEntry.Event == MemoryHistoryEvent.Delete || string.IsNullOrEmpty(lastEntry.NewMemory))
+            {
+                await using var deleteCommand = connection.CreateCommand();
+                deleteCommand.Transaction = transaction;
+                deleteCommand.CommandText = "DELETE FROM memories WHERE id = $id";
+                deleteCommand.Parameters.AddWithValue("$id", memoryId);
+                var rows = await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+                if (rows > 0)
+                {
+                    deleted++;
+                    affected.Add(memoryId);
+                }
+            }
+            else
+            {
+                await using var checkCommand = connection.CreateCommand();
+                checkCommand.Transaction = transaction;
+                checkCommand.CommandText = "SELECT text_value FROM memories WHERE id = $id";
+                checkCommand.Parameters.AddWithValue("$id", memoryId);
+                var currentText = (string?)await checkCommand.ExecuteScalarAsync(cancellationToken);
+
+                if (currentText is null)
+                {
+                    await using var insertCommand = connection.CreateCommand();
+                    insertCommand.Transaction = transaction;
+                    insertCommand.CommandText = """
+                        INSERT INTO memories (id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type)
+                        VALUES ($id, $text, $userId, $agentId, $runId, 0, '{}', $createdAt, $updatedAt, NULL, '', 0, NULL)
+                        """;
+                    insertCommand.Parameters.AddWithValue("$id", memoryId);
+                    insertCommand.Parameters.AddWithValue("$text", lastEntry.NewMemory);
+                    insertCommand.Parameters.AddWithValue("$userId", filter?.UserId ?? "default_user");
+                    insertCommand.Parameters.AddWithValue("$agentId", (object?)filter?.AgentId ?? DBNull.Value);
+                    insertCommand.Parameters.AddWithValue("$runId", (object?)filter?.RunId ?? DBNull.Value);
+                    insertCommand.Parameters.AddWithValue("$createdAt", FormatTimestamp(lastEntry.CreatedAt));
+                    insertCommand.Parameters.AddWithValue("$updatedAt", FormatTimestamp(lastEntry.UpdatedAt));
+                    await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+                    restored++;
+                    affected.Add(memoryId);
+                }
+                else if (currentText != lastEntry.NewMemory)
+                {
+                    await using var updateCommand = connection.CreateCommand();
+                    updateCommand.Transaction = transaction;
+                    updateCommand.CommandText = "UPDATE memories SET text_value = $text, updated_at = $updatedAt WHERE id = $id";
+                    updateCommand.Parameters.AddWithValue("$id", memoryId);
+                    updateCommand.Parameters.AddWithValue("$text", lastEntry.NewMemory);
+                    updateCommand.Parameters.AddWithValue("$updatedAt", FormatTimestamp(lastEntry.UpdatedAt));
+                    await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+                    restored++;
+                    affected.Add(memoryId);
+                }
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new RollbackResult(restored, deleted, affected.ToArray());
+    }
+
+    public async Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT updated_at FROM memory_history WHERE id = $id";
+        command.Parameters.AddWithValue("$id", historyEntryId);
+        var target = await command.ExecuteScalarAsync(cancellationToken);
+        if (target is string timestampStr)
+        {
+            return await RollbackAsync(ParseTimestamp(timestampStr), cancellationToken: cancellationToken);
+        }
+        return new RollbackResult(0, 0, []);
+    }
+
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);

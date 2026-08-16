@@ -1,4 +1,5 @@
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace Mem0Sharp.Tests;
@@ -54,10 +55,26 @@ public sealed class LlmMemoryConflictResolverTests
         Assert.Equal("valid fact", decision.Text);
     }
 
-    private sealed class StubChatClient(string response) : IChatCompletionClient
+    private sealed class StubChatClient(string response) : IChatClient
     {
-        public Task<string> CompleteAsync(
-            IReadOnlyList<Message> messages,
-            CancellationToken cancellationToken = default) => Task.FromResult(response);
+        public ChatClientMetadata Metadata { get; } = new("StubChatClient");
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, response)));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> chatMessages,
+            ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate { Contents = [new TextContent(response)] };
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 }

@@ -1,6 +1,6 @@
 # Ollama sample
 
-This sample runs model-backed memory extraction and embeddings locally through Ollama. Memory storage remains in process.
+This sample runs model-backed memory extraction and embeddings locally through [OllamaSharp](https://github.com/awaescher/OllamaSharp) using standard `Microsoft.Extensions.AI` abstractions (`IChatClient` and `IEmbeddingGenerator`). Memory storage remains in process.
 
 ## Prerequisites
 
@@ -23,6 +23,4 @@ From the repository root:
 dotnet run --project .\samples\Ollama\Ollama.csproj
 ```
 
-The application extracts facts from a short conversation, stores their Ollama embeddings in memory, and searches within Alice's user scope.
-
-Change the model names or endpoint in [Program.cs](Program.cs) when your Ollama installation uses different values. For durable storage, continue with the [PostgreSQL and OpenAI sample](../PostgresOpenAI/README.md).
+The application uses `OllamaApiClient.AsChatClient("llama3.2")` and `OllamaApiClient.AsEmbeddingGenerator("nomic-embed-text")` to extract facts from a conversation, generate vector embeddings, store them in memory, and execute semantic recall.

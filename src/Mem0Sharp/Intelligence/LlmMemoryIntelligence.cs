@@ -1,24 +1,36 @@
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp;
 
 public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
 {
-    private readonly IChatCompletionClient client;
+    private readonly IChatClient client;
 
-    public LlmMemoryConflictResolver(IChatCompletionClient client) => this.client = client;
+    public LlmMemoryConflictResolver(IChatClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        this.client = client;
+    }
 
     public async Task<IReadOnlyList<MemoryDecision>> ResolveAsync(IReadOnlyList<Message> messages, IReadOnlyList<Memory> existingMemories, MemoryAddOptions options, CancellationToken cancellationToken = default)
     {
         const string normalPrompt = "Extract durable facts and reconcile them with existing memories. Return JSON only: {\"memory\":[{\"text\":\"fact\",\"event\":\"ADD|UPDATE|DELETE|NONE\",\"id\":\"existing numeric id when required\"}]}";
         var existing = existingMemories.Select((memory, index) => new { id = index.ToString(), text = memory.Text }).ToArray();
-        var response = await client.CompleteAsync(
-        [
-            new Message("system", MemoryBehaviorPrompts.ForConflictResolution(normalPrompt, options)),
-            new Message("user", JsonSerializer.Serialize(new { existing, messages, instructions = options.Prompt }))
-        ], cancellationToken);
 
-        using var document = ParseResponse(response);
+        var systemPrompt = MemoryBehaviorPrompts.ForConflictResolution(normalPrompt, options);
+        var userContent = JsonSerializer.Serialize(new { existing, messages, instructions = options.Prompt });
+
+        var chatMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userContent)
+        };
+
+        var response = await client.GetResponseAsync(chatMessages, cancellationToken: cancellationToken);
+        var responseText = response.Text ?? string.Empty;
+
+        using var document = ParseResponse(responseText);
         if (document is null) return [];
         if (!document.RootElement.TryGetProperty("memory", out var items) || items.ValueKind != JsonValueKind.Array) return [];
         var decisions = new List<MemoryDecision>();
@@ -71,14 +83,24 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
 
 public sealed class LlmProceduralMemoryGenerator : IProceduralMemoryGenerator
 {
-    private readonly IChatCompletionClient client;
+    private readonly IChatClient client;
 
-    public LlmProceduralMemoryGenerator(IChatCompletionClient client) => this.client = client;
+    public LlmProceduralMemoryGenerator(IChatClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        this.client = client;
+    }
 
-    public Task<string> GenerateAsync(IReadOnlyList<Message> messages, string? prompt = null, CancellationToken cancellationToken = default) =>
-        client.CompleteAsync(
-        [
-            new Message("system", prompt ?? "Summarize the agent procedure as concise, reusable steps. Preserve tool names, ordering, decisions, and failure recovery."),
-            .. messages
-        ], cancellationToken);
+    public async Task<string> GenerateAsync(IReadOnlyList<Message> messages, string? prompt = null, CancellationToken cancellationToken = default)
+    {
+        var conversationText = string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}"));
+        var chatMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, prompt ?? "Summarize the agent procedure as concise, reusable steps. Preserve tool names, ordering, decisions, and failure recovery."),
+            new(ChatRole.User, $"Procedure Trace:\n{conversationText}")
+        };
+
+        var response = await client.GetResponseAsync(chatMessages, cancellationToken: cancellationToken);
+        return response.Text ?? string.Empty;
+    }
 }

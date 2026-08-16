@@ -55,4 +55,5 @@ internal sealed class EvalRunSettings
 {
     public int TopK { get; init; } = 10;
     public int Concurrency { get; init; } = 4;
+    public string ResultsDirectory { get; init; } = "results";
 }

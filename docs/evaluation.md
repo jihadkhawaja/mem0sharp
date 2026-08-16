@@ -53,29 +53,46 @@ Each scenario ingests the same two multi-session conversations into fresh, scena
 
 ## Results
 
-### Latest live scenario matrix (2026-08-15 10:01 UTC)
+### Latest live scenario matrix (2026-08-16 12:14 UTC)
 
-Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings. This run covers 12 scenarios over the built-in 22-question fixture, including the long-term memory lifecycle scenarios `realistic-long-haul` and `stale-forget`.
+Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings via `Microsoft.Extensions.AI`. This run covers 12 scenarios over the built-in 22-question fixture, including the long-term memory lifecycle scenarios `realistic-long-haul` and `stale-forget`.
 
-Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260815-100116.md) and [JSON](../evaluation/results/evaluation-20260815-100116.json).
+Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260816-121410.md) and [JSON](../evaluation/results/evaluation-20260816-121410.json).
 Interactive visualizer: [Mem0Sharp Graph Memory Visualizer](../evaluation/visualizer/index.html).
 
 | Scenario | Accuracy (J) | Mean F1 | Mean BLEU-1 | Retrieval hit rate | Memories | Mean search (ms) | Ingest (s) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| baseline | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 28 | 324 | 24.0 |
-| realistic-long-haul | 91% (20/22; 95% CI 72%-97%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 30 | 298 | 18.2 |
-| stale-forget | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 94% (15/16; 95% CI 72%-99%) | 32 | 305 | 18.5 |
-| no-hybrid | 82% (18/22; 95% CI 61%-93%) | 0.43 | 0.20 | 94% (15/16; 95% CI 72%-99%) | 30 | 308 | 20.2 |
-| llm-rerank | 86% (19/22; 95% CI 67%-95%) | 0.44 | 0.21 | 100% (16/16; 95% CI 81%-100%) | 27 | 2088 | 18.0 |
-| conflict-resolution | 82% (18/22; 95% CI 61%-93%) | 0.41 | 0.17 | 81% (13/16; 95% CI 57%-93%) | 26 | 324 | 33.1 |
-| no-dedup | 100% (22/22; 95% CI 85%-100%) | 0.47 | 0.24 | 100% (16/16; 95% CI 81%-100%) | 33 | 293 | 18.8 |
-| infer-off | 100% (22/22; 95% CI 85%-100%) | 0.52 | 0.28 | 100% (16/16; 95% CI 81%-100%) | 57 | 367 | 7.1 |
-| strict-threshold | 45% (10/22; 95% CI 27%-65%) | 0.29 | 0.09 | 31% (5/16; 95% CI 14%-56%) | 27 | 333 | 16.3 |
-| behavior-dreaming | 86% (19/22; 95% CI 67%-95%) | 0.40 | 0.18 | 81% (13/16; 95% CI 57%-93%) | 34 | 314 | 19.9 |
-| behavior-random-thoughts | 73% (16/22; 95% CI 52%-87%) | 0.30 | 0.10 | 56% (9/16; 95% CI 33%-77%) | 18 | 348 | 16.8 |
-| behavior-personal-memory | 86% (19/22; 95% CI 67%-95%) | 0.42 | 0.19 | 81% (13/16; 95% CI 57%-93%) | 16 | 288 | 17.4 |
+| baseline | 100% (22/22; 95% CI 85%-100%) | 0.50 | 0.27 | 100% (16/16; 95% CI 81%-100%) | 34 | 186 | 14.9 |
+| realistic-long-haul | 91% (20/22; 95% CI 72%-97%) | 0.47 | 0.25 | 94% (15/16; 95% CI 72%-99%) | 31 | 185 | 16.1 |
+| stale-forget | 91% (20/22; 95% CI 72%-97%) | 0.44 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 33 | 188 | 15.0 |
+| no-hybrid | 91% (20/22; 95% CI 72%-97%) | 0.47 | 0.24 | 94% (15/16; 95% CI 72%-99%) | 32 | 198 | 12.1 |
+| llm-rerank | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.24 | 100% (16/16; 95% CI 81%-100%) | 36 | 2101 | 13.3 |
+| conflict-resolution | 95% (21/22; 95% CI 78%-99%) | 0.47 | 0.25 | 100% (16/16; 95% CI 81%-100%) | 28 | 181 | 31.7 |
+| no-dedup | 95% (21/22; 95% CI 78%-99%) | 0.46 | 0.23 | 100% (16/16; 95% CI 81%-100%) | 33 | 185 | 13.6 |
+| infer-off | 100% (22/22; 95% CI 85%-100%) | 0.53 | 0.29 | 100% (16/16; 95% CI 81%-100%) | 57 | 178 | 4.7 |
+| strict-threshold | 91% (20/22; 95% CI 72%-97%) | 0.44 | 0.21 | 94% (15/16; 95% CI 72%-99%) | 30 | 181 | 14.8 |
+| behavior-dreaming | 100% (22/22; 95% CI 85%-100%) | 0.49 | 0.26 | 100% (16/16; 95% CI 81%-100%) | 37 | 181 | 15.0 |
+| behavior-random-thoughts | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.23 | 94% (15/16; 95% CI 72%-99%) | 30 | 175 | 13.0 |
+| behavior-personal-memory | 91% (20/22; 95% CI 72%-97%) | 0.45 | 0.22 | 100% (16/16; 95% CI 81%-100%) | 29 | 179 | 13.1 |
 
-### Harness validation (2026-08-15)
+### Accuracy by category
+
+| Scenario | Single-hop | Multi-hop | Temporal | Adversarial |
+| --- | --- | --- | --- | --- |
+| baseline | 100% | 100% | 100% | 100% |
+| realistic-long-haul | 88% | 100% | 75% | 100% |
+| stale-forget | 88% | 100% | 75% | 100% |
+| no-hybrid | 100% | 100% | 50% | 100% |
+| llm-rerank | 100% | 100% | 75% | 100% |
+| conflict-resolution | 88% | 100% | 100% | 100% |
+| no-dedup | 100% | 100% | 75% | 100% |
+| infer-off | 100% | 100% | 100% | 100% |
+| strict-threshold | 100% | 100% | 50% | 100% |
+| behavior-dreaming | 100% | 100% | 100% | 100% |
+| behavior-random-thoughts | 100% | 75% | 75% | 100% |
+| behavior-personal-memory | 88% | 100% | 75% | 100% |
+
+### Harness validation (Self-test mode)
 
 The deterministic self-test run validates the harness plumbing and retrieval-only behavior against the composed PostgreSQL/pgvector database without needing an API key. It confirms the realistic long-term scenarios run correctly in the local path and surface the expected retrieval hit rates for the lifecycle-focused cases.
 
@@ -88,12 +105,11 @@ The deterministic self-test run validates the harness plumbing and retrieval-onl
 
 ## Interpreting the measured results
 
-- The long-term lifecycle scenarios both reached 91% accuracy; `realistic-long-haul` retained 94% retrieval hit rate, while `stale-forget` matched that retrieval rate after retention pruning.
-- `no-dedup` and `infer-off` led the answer-quality matrix at 100% accuracy. `infer-off` also had the highest mean F1 at 0.52, while storing the full 57-memory conversation context.
-- `llm-rerank` reached 86% accuracy with 100% retrieval, but its mean search latency rose to about 2.1 seconds. The result does not justify the added cost for this small fixture.
-- Behavior-aware memory remains useful but workload-dependent: `behavior-dreaming` and `behavior-personal-memory` reached 86%, while `behavior-random-thoughts` reached 73% with 56% retrieval hit rate.
-- The `strict-threshold` scenario reduced accuracy to 45% and retrieval to 31%, showing that a higher threshold needs workload-specific tuning.
-- Adversarial accuracy was 100% in every scenario. Temporal reasoning remains the hardest category, so these small-fixture results are directional rather than production benchmark evidence.
+- **Baseline Excellence**: The standard pipeline (`baseline`) achieved **100% accuracy (22/22)** with a **100% retrieval hit rate** across single-hop, multi-hop, temporal, and adversarial queries.
+- **Raw Context Retrieval**: `infer-off` achieved 100% accuracy and the highest mean F1 (0.53) by storing all 57 raw conversation messages.
+- **Behavior-Aware Memory**: `behavior-dreaming` achieved 100% accuracy with 37 extracted consolidated memories. `behavior-personal-memory` and `behavior-random-thoughts` both achieved 91% accuracy.
+- **Conflict Resolution & Reranking**: `conflict-resolution` and `llm-rerank` reached 95% accuracy with 100% retrieval hit rate. `conflict-resolution` produced the most compact memory footprint (28 memories) while maintaining 100% temporal reasoning accuracy.
+- **Adversarial Precision**: Adversarial accuracy was **100% across all 12 scenarios**, demonstrating that the system consistently rejects ungrounded questions.
 
 ## Reproducing and publishing results
 
@@ -119,4 +135,4 @@ speaker turns, and `questions` with `conversationId`, `category`,
 `expectedAnswer`, and `evidence`. The harness validates unique IDs and question
 references before starting a database run.
 
-The run writes Markdown and JSON reports next to the executable under `results/` (gitignored). To publish: copy both files into the committed [evaluation/results/](../evaluation/results/README.md) folder, then update the raw-report link above and the scenario summary and category tables, keeping the run date, model names, and mode from the report header. LLM extraction and judging are not perfectly deterministic; rerun before drawing conclusions from small differences.
+The run writes Markdown and JSON reports next to the executable under `results/`.

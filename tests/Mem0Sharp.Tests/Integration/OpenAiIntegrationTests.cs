@@ -1,3 +1,6 @@
+using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OpenAI;
 using Xunit;
 
 namespace Mem0Sharp.Tests;
@@ -10,13 +13,13 @@ public sealed class OpenAiIntegrationTests
     public void ExampleConfigurationCanCreateChatAndEmbeddingClient()
     {
         var configuration = OpenAiTestConfiguration.Load(ConfigurationPath("testsettings.example.yaml"));
-        using var httpClient = new HttpClient();
 
-        var client = configuration.OpenAi.CreateClient(httpClient);
+        var client = configuration.OpenAi.CreateClient();
+        var chatClient = client.GetChatClient(configuration.OpenAi.ChatModel).AsIChatClient();
+        var embeddingGenerator = client.GetEmbeddingClient(configuration.OpenAi.EmbeddingModel).AsIEmbeddingGenerator();
 
-        Assert.IsAssignableFrom<IChatCompletionClient>(client);
-        Assert.IsAssignableFrom<IEmbeddingGenerator>(client);
-        Assert.Equal(new Uri("https://api.openai.com/"), httpClient.BaseAddress);
+        Assert.IsAssignableFrom<IChatClient>(chatClient);
+        Assert.IsAssignableFrom<IEmbeddingGenerator<string, Embedding<float>>>(embeddingGenerator);
     }
 
     [Fact]
@@ -27,14 +30,15 @@ public sealed class OpenAiIntegrationTests
             return;
 
         var configuration = OpenAiTestConfiguration.Load(ConfigurationPath("testsettings.local.yaml"));
-        using var httpClient = new HttpClient();
-        var client = configuration.OpenAi.CreateClient(httpClient);
+        var client = configuration.OpenAi.CreateClient();
+        var chatClient = client.GetChatClient(configuration.OpenAi.ChatModel).AsIChatClient();
+        var embeddingGenerator = client.GetEmbeddingClient(configuration.OpenAi.EmbeddingModel).AsIEmbeddingGenerator();
 
-        var completion = await client.CompleteAsync([new Message("user", "Reply with exactly: mem0sharp")]);
-        var embedding = await client.GenerateAsync("mem0sharp integration test");
+        var completion = await chatClient.GetResponseAsync([new ChatMessage(ChatRole.User, "Reply with exactly: mem0sharp")]);
+        var embeddings = await embeddingGenerator.GenerateAsync(["mem0sharp integration test"]);
 
-        Assert.Contains("mem0sharp", completion, StringComparison.OrdinalIgnoreCase);
-        Assert.NotEmpty(embedding);
+        Assert.Contains("mem0sharp", completion.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(embeddings);
     }
 
     private static string ConfigurationPath(string fileName) => Path.Combine(AppContext.BaseDirectory, fileName);

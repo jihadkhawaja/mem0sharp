@@ -19,4 +19,12 @@ public sealed record MemoryHistoryEntry
     public bool IsDeleted { get; init; }
     public string? ActorId { get; init; }
     public string? Role { get; init; }
+    public string? SourceMessageHash { get; init; }
+    public string? SessionId { get; init; }
+    public string? ProvenanceTraceId { get; init; }
 }
+
+public sealed record RollbackResult(
+    int RestoredCount,
+    int DeletedCount,
+    IReadOnlyList<string> AffectedMemoryIds);

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.AI;
+
 namespace Mem0Sharp;
 
 public enum MemoryScope
@@ -24,6 +26,38 @@ public sealed record Memory
     public string? MemoryType { get; init; }
 }
 
-public sealed record MemoryInput(string Text, MemoryScope Scope = MemoryScope.User, IReadOnlyDictionary<string, string>? Metadata = null, DateTimeOffset? ExpiresAt = null, MemoryBehavior Behavior = MemoryBehavior.Normal, string? MemoryType = null);
+public sealed record MemoryInput(
+    string Text, 
+    MemoryScope Scope = MemoryScope.User, 
+    IReadOnlyDictionary<string, string>? Metadata = null, 
+    DateTimeOffset? ExpiresAt = null, 
+    MemoryBehavior Behavior = MemoryBehavior.Normal, 
+    string? MemoryType = null);
 
-public sealed record Message(string Role, string Content);
+public sealed record Message(string Role, string Content)
+{
+    public ChatMessage ToChatMessage()
+    {
+        var roleLower = Role?.ToLowerInvariant() ?? "user";
+        var role = roleLower switch
+        {
+            "system" => ChatRole.System,
+            "assistant" => ChatRole.Assistant,
+            "tool" => ChatRole.Tool,
+            _ => ChatRole.User
+        };
+        var authorName = roleLower is "system" or "assistant" or "user" or "tool" ? null : Role;
+        var chatMessage = new ChatMessage(role, Content);
+        if (authorName is not null)
+        {
+            chatMessage.AuthorName = authorName;
+        }
+        return chatMessage;
+    }
+
+    public static Message FromChatMessage(ChatMessage chatMessage) =>
+        new(chatMessage.AuthorName ?? chatMessage.Role.Value, chatMessage.Text ?? string.Empty);
+
+    public static implicit operator ChatMessage(Message message) => message.ToChatMessage();
+    public static implicit operator Message(ChatMessage chatMessage) => FromChatMessage(chatMessage);
+}

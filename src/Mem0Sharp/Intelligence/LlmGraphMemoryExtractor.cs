@@ -1,21 +1,26 @@
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp;
 
 public sealed class LlmGraphMemoryExtractor : IGraphMemoryExtractor
 {
-    private readonly IChatCompletionClient client;
+    private readonly IChatClient client;
 
-    public LlmGraphMemoryExtractor(IChatCompletionClient client) => this.client = client;
+    public LlmGraphMemoryExtractor(IChatClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        this.client = client;
+    }
 
     public async Task<IReadOnlyList<ExtractedRelation>> ExtractAsync(string text, CancellationToken cancellationToken = default)
     {
-        var response = await client.CompleteAsync(
+        var response = await client.GetResponseAsync(
         [
-            new Message("system", "Extract factual relationships. Return only a JSON array of objects with source, relationship, and target string fields."),
-            new Message("user", text)
-        ], cancellationToken);
-        return ParseRelations(response);
+            new ChatMessage(ChatRole.System, "Extract factual relationships. Return only a JSON array of objects with source, relationship, and target string fields."),
+            new ChatMessage(ChatRole.User, text)
+        ], cancellationToken: cancellationToken);
+        return ParseRelations(response.Text ?? string.Empty);
     }
 
     internal static IReadOnlyList<ExtractedRelation> ParseRelations(string response)

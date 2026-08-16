@@ -1,17 +1,17 @@
+using System.ClientModel;
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OpenAI;
 
 var configuration = SampleConfiguration.Load(
     Path.Combine(AppContext.BaseDirectory, "sampleconfig.local.yaml"));
 
-using var httpClient = new HttpClient
-{
-    BaseAddress = new Uri(configuration.OpenAi.Endpoint, UriKind.Absolute)
-};
-var provider = new OpenAiCompatibleClient(
-    httpClient,
-    configuration.OpenAi.ApiKey,
-    configuration.OpenAi.ChatModel,
-    configuration.OpenAi.EmbeddingModel);
+var openAiClient = new OpenAIClient(
+    new ApiKeyCredential(configuration.OpenAi.ApiKey),
+    new OpenAIClientOptions { Endpoint = new Uri(configuration.OpenAi.Endpoint) });
+
+var chatClient = openAiClient.GetChatClient(configuration.OpenAi.ChatModel).AsIChatClient();
+var embeddingGenerator = openAiClient.GetEmbeddingClient(configuration.OpenAi.EmbeddingModel).AsIEmbeddingGenerator();
 
 await using var store = new PostgresMemoryStore(new PostgresMemoryStoreOptions
 {
@@ -23,8 +23,8 @@ await store.InitializeAsync();
 
 var memory = new MemoryService(
     store: store,
-    embeddings: provider,
-    extractor: new LlmMemoryExtractor(provider));
+    embeddings: embeddingGenerator,
+    extractor: new LlmMemoryExtractor(chatClient));
 
 await memory.AddAsync(
 [

@@ -1,3 +1,6 @@
+using System.ClientModel;
+using Microsoft.Extensions.AI;
+using OpenAI;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -25,12 +28,13 @@ internal sealed class OpenAiTestSettings
     public string ChatModel { get; init; } = "gpt-5.6-luna";
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
 
-    public OpenAiCompatibleClient CreateClient(HttpClient httpClient)
+    public OpenAIClient CreateClient()
     {
         if (string.IsNullOrWhiteSpace(ApiKey))
             throw new InvalidDataException("openAi.apiKey must be configured.");
 
-        httpClient.BaseAddress = new Uri(Endpoint, UriKind.Absolute);
-        return new OpenAiCompatibleClient(httpClient, ApiKey, ChatModel, EmbeddingModel);
+        return new OpenAIClient(
+            new ApiKeyCredential(ApiKey),
+            new OpenAIClientOptions { Endpoint = new Uri(Endpoint, UriKind.Absolute) });
     }
 }

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.AI;
+
 namespace Mem0Sharp;
 
 public interface IMemoryExtractor

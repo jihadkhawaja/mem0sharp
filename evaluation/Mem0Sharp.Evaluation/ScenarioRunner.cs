@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp.Evaluation;
 
@@ -9,7 +10,8 @@ namespace Mem0Sharp.Evaluation;
 internal sealed class ScenarioRunner(
     EvaluationConfiguration configuration,
     ScenarioDefinition scenario,
-    OpenAiCompatibleClient? provider,
+    IChatClient? chatClient,
+    IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator,
     LlmEvalHelper? llmHelper,
     bool retrievalOnly,
     EvaluationDatasetSnapshot dataset)
@@ -34,119 +36,76 @@ internal sealed class ScenarioRunner(
 
         var memory = new MemoryService(
             store: store,
-            embeddings: retrievalOnly ? new LocalEmbeddingGenerator(configuration.Postgres.EmbeddingDimensions) : provider!,
-            extractor: retrievalOnly ? new BasicMemoryExtractor() : new LlmMemoryExtractor(provider!),
-            reranker: scenario.Rerank && !retrievalOnly ? new LlmReranker(provider!) : null,
-            conflictResolver: scenario.UseConflictResolver && !retrievalOnly ? new LlmMemoryConflictResolver(provider!) : null);
+            embeddings: retrievalOnly ? new LocalEmbeddingGenerator(configuration.Postgres.EmbeddingDimensions) : embeddingGenerator!,
+            extractor: retrievalOnly ? new BasicMemoryExtractor() : new LlmMemoryExtractor(chatClient!),
+            reranker: scenario.Rerank && !retrievalOnly ? new LlmReranker(chatClient!) : null,
+            conflictResolver: scenario.UseConflictResolver && !retrievalOnly ? new LlmMemoryConflictResolver(chatClient!) : null);
 
-        // Ingest every conversation session-by-session under a scenario- and
-        // conversation-scoped user id so scenarios never contaminate each other.
         foreach (var conversation in dataset.Conversations)
         {
+            var userId = $"{scenario.Name}_{conversation.Id}";
+
             foreach (var session in conversation.Sessions)
             {
-                var messages = session.Turns
-                    .Select(turn => new Message(
-                        turn.Speaker == conversation.SpeakerA ? "user" : "assistant",
-                        $"{turn.Speaker} ({session.Date}): {turn.Text}"))
+                var sessionMessages = session.Turns
+                    .Select(turn => new Message(turn.Speaker, turn.Text))
                     .ToArray();
 
-                var result = await memory.AddAsync(messages, new MemoryAddOptions
+                var addOptions = new MemoryAddOptions
                 {
-                    UserId = $"eval-{scenario.Name}-{conversation.Id}",
-                    AgentId = "evaluator",
-                    Behavior = scenario.Behavior,
-                    Prompt = scenario.BehaviorPersona,
-                    Infer = scenario.Infer || retrievalOnly,
+                    UserId = userId,
+                    Infer = scenario.Infer,
                     Deduplicate = scenario.Deduplicate,
                     Metadata = new Dictionary<string, string>
                     {
-                        ["conversation"] = conversation.Id,
                         ["session_date"] = session.Date
                     }
-                }, cancellationToken);
-                memoriesStored += result.Memories.Count;
-            }
+                };
 
-            if (scenario.ForgetStaleAfterDays is > 0)
-            {
-                var userId = $"eval-{scenario.Name}-{conversation.Id}";
-                await memory.ForgetStaleAsync(TimeSpan.FromDays(scenario.ForgetStaleAfterDays.Value), new MemoryFilter(UserId: userId), cancellationToken);
+                var addResult = await memory.AddAsync(sessionMessages, addOptions, cancellationToken);
+                memoriesStored += addResult.Memories.Count;
             }
         }
-        ingestWatch.Stop();
 
-        var questions = dataset.Questions;
-        var results = new QuestionResult[questions.Count];
-        var gate = new SemaphoreSlim(Math.Max(1, configuration.Evaluation.Concurrency));
-        var workers = questions.Select(async (question, index) =>
+        ingestWatch.Stop();
+        var results = new List<QuestionResult>();
+
+        foreach (var question in dataset.Questions)
         {
-            await gate.WaitAsync(cancellationToken);
-            try
-            {
-                results[index] = await EvaluateQuestionAsync(memory, question, cancellationToken);
-            }
-            finally
-            {
-                gate.Release();
-            }
-        });
-        await Task.WhenAll(workers);
+            var userId = $"{scenario.Name}_{question.ConversationId}";
+            var searchWatch = Stopwatch.StartNew();
+            var searchResults = await memory.SearchAsync(
+                question.Question,
+                new MemorySearchOptions
+                {
+                    Filter = new MemoryFilter(UserId: userId),
+                    TopK = topK,
+                    Hybrid = scenario.Hybrid,
+                    Rerank = scenario.Rerank && !retrievalOnly,
+                    RecencyBias = scenario.RecencyBias
+                },
+                cancellationToken);
+            searchWatch.Stop();
+
+            var result = await EvaluateQuestionAsync(question, searchResults, searchWatch, cancellationToken);
+            results.Add(result);
+        }
 
         return BuildReport(memoriesStored, ingestWatch.Elapsed, results);
     }
 
-    private async Task<QuestionResult> EvaluateQuestionAsync(MemoryService memory, EvalQuestion question, CancellationToken cancellationToken)
+    private async Task<QuestionResult> EvaluateQuestionAsync(
+        EvalQuestion question,
+        IReadOnlyList<SearchResult> searchResults,
+        Stopwatch searchWatch,
+        CancellationToken cancellationToken)
     {
-        try
-        {
-            return await EvaluateQuestionCoreAsync(memory, question, cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            return new QuestionResult
-            {
-                QuestionId = question.Id,
-                Category = question.Category,
-                Question = question.Question,
-                ExpectedAnswer = question.ExpectedAnswer,
-                GeneratedAnswer = null,
-                JudgeVerdict = $"ERROR: {exception.Message}",
-                Correct = null,
-                RetrievalHit = false,
-                RetrievedCount = 0,
-                SearchLatencyMs = 0,
-                RetrievedMemories = []
-            };
-        }
-    }
+        var retrievedTexts = searchResults.Select(r => r.Memory.Text).ToArray();
+        var retrievalHit = question.IsAdversarial
+            ? searchResults.Count == 0
+            : question.Evidence.Count == 0 || question.Evidence.Any(evidence => retrievedTexts.Any(text => text.Contains(evidence, StringComparison.OrdinalIgnoreCase)));
 
-    private async Task<QuestionResult> EvaluateQuestionCoreAsync(MemoryService memory, EvalQuestion question, CancellationToken cancellationToken)
-    {
-        var conversation = dataset.Conversations.Single(item => item.Id == question.ConversationId);
-        var filter = new MemoryFilter(UserId: $"eval-{scenario.Name}-{conversation.Id}");
-
-        var searchWatch = Stopwatch.StartNew();
-        var searchResults = await memory.SearchAsync(question.Question, new MemorySearchOptions
-        {
-            Filter = filter,
-            TopK = topK,
-            Threshold = scenario.Threshold,
-            Hybrid = scenario.Hybrid,
-            Rerank = scenario.Rerank && !retrievalOnly,
-            Explain = false,
-            Behavior = scenario.Behavior,
-            RecencyBias = scenario.RecencyBias,
-            FreshnessWindow = scenario.FreshnessWindowDays is null ? null : TimeSpan.FromDays(scenario.FreshnessWindowDays.Value)
-        }, cancellationToken);
-        searchWatch.Stop();
-
-        var retrievedTexts = searchResults.Select(result => result.Memory.Text).ToArray();
-        var retrievalHit = !question.IsAdversarial
-            && question.Evidence.Any(evidence =>
-                retrievedTexts.Any(text => text.Contains(evidence, StringComparison.OrdinalIgnoreCase)));
-
-        if (retrievalOnly)
+        if (retrievalOnly || llmHelper is null)
         {
             return new QuestionResult
             {
@@ -161,7 +120,7 @@ internal sealed class ScenarioRunner(
             };
         }
 
-        var generatedAnswer = await llmHelper!.GenerateAnswerAsync(question.Question, searchResults, cancellationToken);
+        var generatedAnswer = await llmHelper.GenerateAnswerAsync(question.Question, searchResults, cancellationToken);
         var outcome = await llmHelper.JudgeAsync(question.Question, question.ExpectedAnswer, generatedAnswer, cancellationToken);
 
         return new QuestionResult

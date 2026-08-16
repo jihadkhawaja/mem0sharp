@@ -1,21 +1,21 @@
+using System.ClientModel;
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OpenAI;
 
 var configuration = SampleConfiguration.Load(
     Path.Combine(AppContext.BaseDirectory, "sampleconfig.local.yaml"));
 
-using var httpClient = new HttpClient
-{
-    BaseAddress = new Uri(configuration.OpenAi.Endpoint, UriKind.Absolute)
-};
-var openAi = new OpenAiCompatibleClient(
-    httpClient,
-    configuration.OpenAi.ApiKey,
-    configuration.OpenAi.ChatModel,
-    configuration.OpenAi.EmbeddingModel);
+var openAiClient = new OpenAIClient(
+    new ApiKeyCredential(configuration.OpenAi.ApiKey),
+    new OpenAIClientOptions { Endpoint = new Uri(configuration.OpenAi.Endpoint) });
+
+var chatClient = openAiClient.GetChatClient(configuration.OpenAi.ChatModel).AsIChatClient();
+var embeddingGenerator = openAiClient.GetEmbeddingClient(configuration.OpenAi.EmbeddingModel).AsIEmbeddingGenerator();
 
 var memory = new MemoryService(
-    embeddings: openAi,
-    extractor: new LlmMemoryExtractor(openAi));
+    embeddings: embeddingGenerator,
+    extractor: new LlmMemoryExtractor(chatClient));
 
 Message[] conversation =
 [

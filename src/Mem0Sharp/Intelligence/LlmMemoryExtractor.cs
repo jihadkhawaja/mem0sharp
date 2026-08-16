@@ -1,19 +1,32 @@
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp;
 
 public sealed class LlmMemoryExtractor : IMemoryExtractor
 {
-    private readonly IChatCompletionClient client;
+    private readonly IChatClient client;
 
-    public LlmMemoryExtractor(IChatCompletionClient client) => this.client = client;
+    public LlmMemoryExtractor(IChatClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        this.client = client;
+    }
 
     public async Task<IReadOnlyList<MemoryInput>> ExtractAsync(IReadOnlyList<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (messages.Count == 0) return [];
         var instructions = options is null ? MemoryBehaviorPrompts.NormalExtraction : MemoryBehaviorPrompts.ForExtraction(options);
-        var prompt = new Message("system", instructions);
-        var response = await client.CompleteAsync([prompt, .. messages], cancellationToken);
-        return ParseFacts(response);
+        var conversationText = string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}"));
+        var chatMessages = new List<ChatMessage>
+        {
+            new(ChatRole.System, instructions),
+            new(ChatRole.User, $"Conversation:\n{conversationText}\n\nReturn only a JSON array of strings.")
+        };
+
+        var response = await client.GetResponseAsync(chatMessages, cancellationToken: cancellationToken);
+        var text = response.Text ?? string.Empty;
+        return ParseFacts(text);
     }
 
     internal static IReadOnlyList<MemoryInput> ParseFacts(string response)

@@ -1,15 +1,16 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp;
 
 public sealed partial class LlmReranker : IMemoryReranker
 {
     private const int MaxInputLength = 4000;
-    private readonly IChatCompletionClient client;
+    private readonly IChatClient client;
     private readonly int maxDegreeOfParallelism;
 
-    public LlmReranker(IChatCompletionClient client, int maxDegreeOfParallelism = 8)
+    public LlmReranker(IChatClient client, int maxDegreeOfParallelism = 8)
     {
         ArgumentNullException.ThrowIfNull(client);
         if (maxDegreeOfParallelism < 1) throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism));
@@ -31,12 +32,12 @@ public sealed partial class LlmReranker : IMemoryReranker
         await Parallel.ForEachAsync(Enumerable.Range(0, candidates.Count), parallelOptions, async (index, ct) =>
         {
             var candidate = candidates[index];
-            var response = await client.CompleteAsync(
+            var response = await client.GetResponseAsync(
             [
-                new Message("system", "Score the relevance of the document to the query from 0.0 to 1.0. Return only the number."),
-                new Message("user", $"Query: {query[..Math.Min(query.Length, MaxInputLength)]}\n\nDocument: {candidate.Memory.Text[..Math.Min(candidate.Memory.Text.Length, MaxInputLength)]}")
-            ], ct);
-            var rerankScore = ParseScore(response);
+                new ChatMessage(ChatRole.System, "Score the relevance of the document to the query from 0.0 to 1.0. Return only the number."),
+                new ChatMessage(ChatRole.User, $"Query: {query[..Math.Min(query.Length, MaxInputLength)]}\n\nDocument: {candidate.Memory.Text[..Math.Min(candidate.Memory.Text.Length, MaxInputLength)]}")
+            ], cancellationToken: ct);
+            var rerankScore = ParseScore(response.Text ?? string.Empty);
             var details = candidate.ScoreDetails is null
                 ? new SearchScoreDetails(candidate.Score, Reranker: rerankScore)
                 : candidate.ScoreDetails with { Reranker = rerankScore };

@@ -8,6 +8,7 @@
     <Project Path="samples/McpServer/McpServer.csproj" />
     <Project Path="samples/MemoryBehaviors/MemoryBehaviors.csproj" />
     <Project Path="samples/Ollama/Ollama.csproj" />
+    <Project Path="samples/OnnxLocal/OnnxLocal.csproj" />
     <Project Path="samples/PostgresOpenAI/PostgresOpenAI.csproj" />
   </Folder>
   <Folder Name="/src/">

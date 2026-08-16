@@ -1,15 +1,13 @@
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
+using OllamaSharp;
 
-using var httpClient = new HttpClient();
-var ollama = new OllamaClient(
-    httpClient,
-    chatModel: "llama3.2",
-    embeddingModel: "nomic-embed-text",
-    endpoint: new Uri("http://localhost:11434/"));
+var endpoint = new Uri("http://localhost:11434/");
+var ollama = new OllamaApiClient(endpoint, "llama3.2");
 
 var memory = new MemoryService(
-    embeddings: ollama,
-    extractor: new LlmMemoryExtractor(ollama));
+    embeddings: (IEmbeddingGenerator<string, Embedding<float>>)ollama,
+    extractor: new LlmMemoryExtractor((IChatClient)ollama));
 
 var added = await memory.AddAsync(
 [

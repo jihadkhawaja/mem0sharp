@@ -137,6 +137,107 @@ public sealed class InMemoryStore : IMemoryStore
         return Task.FromResult(entries);
     }
 
+    public Task<IReadOnlyList<MemoryHistoryEntry>> GetAllHistoryAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var all = history.Values.SelectMany(q => q).OrderBy(h => h.UpdatedAt).ToArray();
+        return Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>(all);
+    }
+
+    public Task<RollbackResult> RollbackAsync(DateTimeOffset pointInTime, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            var restored = 0;
+            var deleted = 0;
+            var affected = new HashSet<string>(StringComparer.Ordinal);
+
+            // Reconstruct state for all memory IDs in history
+            foreach (var pair in history)
+            {
+                var memoryId = pair.Key;
+                var entriesBefore = pair.Value
+                    .Where(e => e.UpdatedAt <= pointInTime)
+                    .OrderBy(e => e.UpdatedAt)
+                    .ToArray();
+
+                if (entriesBefore.Length == 0)
+                {
+                    // Memory was created after pointInTime -> remove if present
+                    if (memories.TryRemove(memoryId, out _))
+                    {
+                        vectors.TryRemove(memoryId, out _);
+                        deleted++;
+                        affected.Add(memoryId);
+                    }
+                }
+                else
+                {
+                    var lastEntry = entriesBefore[^1];
+                    if (lastEntry.IsDeleted || lastEntry.Event == MemoryHistoryEvent.Delete || string.IsNullOrEmpty(lastEntry.NewMemory))
+                    {
+                        // Was deleted at pointInTime
+                        if (memories.TryRemove(memoryId, out _))
+                        {
+                            vectors.TryRemove(memoryId, out _);
+                            deleted++;
+                            affected.Add(memoryId);
+                        }
+                    }
+                    else
+                    {
+                        // Active at pointInTime
+                        if (memories.TryGetValue(memoryId, out var current))
+                        {
+                            if (current.Text != lastEntry.NewMemory)
+                            {
+                                memories[memoryId] = current with { Text = lastEntry.NewMemory, UpdatedAt = lastEntry.UpdatedAt };
+                                restored++;
+                                affected.Add(memoryId);
+                            }
+                        }
+                        else
+                        {
+                            // Recreate
+                            memories[memoryId] = new Memory
+                            {
+                                Id = memoryId,
+                                Text = lastEntry.NewMemory,
+                                UserId = filter?.UserId ?? "default_user",
+                                AgentId = filter?.AgentId,
+                                RunId = filter?.RunId,
+                                CreatedAt = lastEntry.CreatedAt,
+                                UpdatedAt = lastEntry.UpdatedAt
+                            };
+                            restored++;
+                            affected.Add(memoryId);
+                        }
+                    }
+                }
+            }
+
+            return Task.FromResult(new RollbackResult(restored, deleted, affected.ToArray()));
+        }
+    }
+
+    public Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (sync)
+        {
+            foreach (var pair in history)
+            {
+                var target = pair.Value.FirstOrDefault(e => e.Id == historyEntryId);
+                if (target is not null)
+                {
+                    return RollbackAsync(target.UpdatedAt, cancellationToken: cancellationToken);
+                }
+            }
+            return Task.FromResult(new RollbackResult(0, 0, []));
+        }
+    }
+
     public Task ResetAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

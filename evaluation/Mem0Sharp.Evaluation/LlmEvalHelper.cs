@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp.Evaluation;
 
@@ -9,7 +10,7 @@ namespace Mem0Sharp.Evaluation;
 /// partial-credit, paraphrase, and date-tolerance rules) plus token-F1 and BLEU-1
 /// answer-quality metrics used by popular memory evaluations.
 /// </summary>
-internal sealed partial class LlmEvalHelper(IChatCompletionClient answerClient, IChatCompletionClient judgeClient)
+internal sealed partial class LlmEvalHelper(IChatClient answerClient, IChatClient judgeClient)
 {
     private const string AnswerSystemPrompt =
         "You are a precise assistant answering questions about a past conversation, using only the retrieved memories below. " +
@@ -48,22 +49,23 @@ internal sealed partial class LlmEvalHelper(IChatCompletionClient answerClient, 
         var context = memories.Count == 0
             ? "(no memories retrieved)"
             : string.Join("\n", memories.Select((result, index) => $"{index + 1}. {result.Memory.Text}"));
-        return await answerClient.CompleteAsync(
+        var response = await answerClient.GetResponseAsync(
         [
-            new Message("system", AnswerSystemPrompt),
-            new Message("user", $"Retrieved memories:\n{context}\n\nQuestion: {question}")
-        ], cancellationToken);
+            new ChatMessage(ChatRole.System, AnswerSystemPrompt),
+            new ChatMessage(ChatRole.User, $"Retrieved memories:\n{context}\n\nQuestion: {question}")
+        ], cancellationToken: cancellationToken);
+        return response.Text ?? string.Empty;
     }
 
     public async Task<JudgeOutcome> JudgeAsync(string question, string expectedAnswer, string generatedAnswer, CancellationToken cancellationToken)
     {
-        var response = await judgeClient.CompleteAsync(
+        var response = await judgeClient.GetResponseAsync(
         [
-            new Message("system", JudgeSystemPrompt),
-            new Message("user", $"{JudgeRules}\n\n## Question\nQuestion: {question}\nGold answer: {expectedAnswer}\nGenerated answer: {generatedAnswer}")
-        ], cancellationToken);
+            new ChatMessage(ChatRole.System, JudgeSystemPrompt),
+            new ChatMessage(ChatRole.User, $"{JudgeRules}\n\n## Question\nQuestion: {question}\nGold answer: {expectedAnswer}\nGenerated answer: {generatedAnswer}")
+        ], cancellationToken: cancellationToken);
 
-        var (label, reasoning) = ParseJudgment(response);
+        var (label, reasoning) = ParseJudgment(response.Text ?? string.Empty);
         return new JudgeOutcome(
             Correct: string.Equals(label, "CORRECT", StringComparison.OrdinalIgnoreCase),
             Reasoning: reasoning,

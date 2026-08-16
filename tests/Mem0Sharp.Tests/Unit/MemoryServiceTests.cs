@@ -1,4 +1,5 @@
 using Mem0Sharp;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace Mem0Sharp.Tests;
@@ -523,9 +524,17 @@ public sealed class MemoryServiceTests
 
     private sealed class ConstantEmbeddingGenerator : IEmbeddingGenerator
     {
-        public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<float>>([1, 0]);
-        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            var result = new GeneratedEmbeddings<Embedding<float>>();
+            foreach (var _ in values) result.Add(new Embedding<float>(new float[] { 1, 0 }));
+            return Task.FromResult(result);
+        }
+        public Task<IReadOnlyList<float>> GenerateVectorAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<float>>([1, 0]);
+        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateVectorBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 
     private sealed class ReverseReranker : IMemoryReranker
@@ -569,17 +578,30 @@ public sealed class MemoryServiceTests
         public int BatchCalls { get; private set; }
         public int SingleCalls { get; private set; }
 
-        public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            var list = values.ToArray();
+            if (list.Length > 1) BatchCalls++;
+            else SingleCalls++;
+            var result = new GeneratedEmbeddings<Embedding<float>>();
+            foreach (var _ in list) result.Add(new Embedding<float>(new float[] { 1, 0 }));
+            return Task.FromResult(result);
+        }
+
+        public Task<IReadOnlyList<float>> GenerateVectorAsync(string text, CancellationToken cancellationToken = default)
         {
             SingleCalls++;
             return Task.FromResult<IReadOnlyList<float>>([1, 0]);
         }
 
-        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateVectorBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
         {
             BatchCalls++;
             return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(texts.Select(_ => (IReadOnlyList<float>)[1, 0]).ToArray());
         }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+        public void Dispose() { }
     }
 
     private sealed class CountingBatchVectorStore : IMemoryStore

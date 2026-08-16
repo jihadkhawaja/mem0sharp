@@ -247,6 +247,143 @@ public sealed class PostgresMemoryStore : IMemoryStore, IAsyncDisposable
         return entries;
     }
 
+    public async Task<IReadOnlyList<MemoryHistoryEntry>> GetAllHistoryAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"SELECT id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role FROM {historyTableName} ORDER BY updated_at ASC, id ASC", connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var entries = new List<MemoryHistoryEntry>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(new MemoryHistoryEntry
+            {
+                Id = reader.GetString(0),
+                MemoryId = reader.GetString(1),
+                Event = (MemoryHistoryEvent)reader.GetInt32(2),
+                OldMemory = reader.IsDBNull(3) ? null : reader.GetString(3),
+                NewMemory = reader.IsDBNull(4) ? null : reader.GetString(4),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
+                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                IsDeleted = reader.GetBoolean(7),
+                ActorId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                Role = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
+        }
+        return entries;
+    }
+
+    public async Task<RollbackResult> RollbackAsync(DateTimeOffset pointInTime, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using var idsCommand = new NpgsqlCommand($"SELECT DISTINCT memory_id FROM {historyTableName}", connection, transaction);
+        var memoryIds = new List<string>();
+        await using (var reader = await idsCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                memoryIds.Add(reader.GetString(0));
+            }
+        }
+
+        var restored = 0;
+        var deleted = 0;
+        var affected = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var memoryId in memoryIds)
+        {
+            await using var historyCommand = new NpgsqlCommand(
+                $"SELECT id, memory_id, event, old_memory, new_memory, created_at, updated_at, is_deleted, actor_id, role FROM {historyTableName} WHERE memory_id = $1 AND updated_at <= $2 ORDER BY updated_at DESC, id DESC LIMIT 1",
+                connection, transaction);
+            historyCommand.Parameters.AddWithValue(memoryId);
+            historyCommand.Parameters.AddWithValue(pointInTime);
+
+            MemoryHistoryEntry? lastEntry = null;
+            await using (var reader = await historyCommand.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    lastEntry = new MemoryHistoryEntry
+                    {
+                        Id = reader.GetString(0),
+                        MemoryId = reader.GetString(1),
+                        Event = (MemoryHistoryEvent)reader.GetInt32(2),
+                        OldMemory = reader.IsDBNull(3) ? null : reader.GetString(3),
+                        NewMemory = reader.IsDBNull(4) ? null : reader.GetString(4),
+                        CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
+                        UpdatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                        IsDeleted = reader.GetBoolean(7),
+                        ActorId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                        Role = reader.IsDBNull(9) ? null : reader.GetString(9)
+                    };
+                }
+            }
+
+            if (lastEntry is null || lastEntry.IsDeleted || lastEntry.Event == MemoryHistoryEvent.Delete || string.IsNullOrEmpty(lastEntry.NewMemory))
+            {
+                await using var deleteCommand = new NpgsqlCommand($"DELETE FROM {tableName} WHERE id = $1", connection, transaction);
+                deleteCommand.Parameters.AddWithValue(memoryId);
+                var rows = await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+                if (rows > 0)
+                {
+                    deleted++;
+                    affected.Add(memoryId);
+                }
+            }
+            else
+            {
+                await using var checkCommand = new NpgsqlCommand($"SELECT text_value FROM {tableName} WHERE id = $1", connection, transaction);
+                checkCommand.Parameters.AddWithValue(memoryId);
+                var currentText = (string?)await checkCommand.ExecuteScalarAsync(cancellationToken);
+
+                if (currentText is null)
+                {
+                    await using var insertCommand = new NpgsqlCommand($$"""
+                        INSERT INTO {{tableName}} (id, text_value, user_id, agent_id, run_id, scope, metadata, created_at, updated_at, expires_at, hash_value, behavior, memory_type)
+                        VALUES ($1, $2, $3, $4, $5, 0, '{}'::jsonb, $6, $7, NULL, '', 0, NULL)
+                        """, connection, transaction);
+                    insertCommand.Parameters.AddWithValue(memoryId);
+                    insertCommand.Parameters.AddWithValue(lastEntry.NewMemory);
+                    insertCommand.Parameters.AddWithValue(filter?.UserId ?? "default_user");
+                    insertCommand.Parameters.AddWithValue((object?)filter?.AgentId ?? DBNull.Value);
+                    insertCommand.Parameters.AddWithValue((object?)filter?.RunId ?? DBNull.Value);
+                    insertCommand.Parameters.AddWithValue(lastEntry.CreatedAt);
+                    insertCommand.Parameters.AddWithValue(lastEntry.UpdatedAt);
+                    await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+                    restored++;
+                    affected.Add(memoryId);
+                }
+                else if (currentText != lastEntry.NewMemory)
+                {
+                    await using var updateCommand = new NpgsqlCommand($"UPDATE {tableName} SET text_value = $1, updated_at = $2 WHERE id = $3", connection, transaction);
+                    updateCommand.Parameters.AddWithValue(lastEntry.NewMemory);
+                    updateCommand.Parameters.AddWithValue(lastEntry.UpdatedAt);
+                    updateCommand.Parameters.AddWithValue(memoryId);
+                    await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+                    restored++;
+                    affected.Add(memoryId);
+                }
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new RollbackResult(restored, deleted, affected.ToArray());
+    }
+
+    public async Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"SELECT updated_at FROM {historyTableName} WHERE id = $1", connection);
+        command.Parameters.AddWithValue(historyEntryId);
+        var target = await command.ExecuteScalarAsync(cancellationToken);
+        if (target is DateTimeOffset timestamp)
+        {
+            return await RollbackAsync(timestamp, cancellationToken: cancellationToken);
+        }
+        return new RollbackResult(0, 0, []);
+    }
+
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);

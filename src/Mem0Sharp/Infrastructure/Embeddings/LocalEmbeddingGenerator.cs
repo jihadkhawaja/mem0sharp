@@ -1,5 +1,6 @@
 using System.Numerics.Tensors;
 using System.Text;
+using Microsoft.Extensions.AI;
 
 namespace Mem0Sharp;
 
@@ -7,16 +8,56 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
 {
     public int Dimensions { get; }
 
+    public EmbeddingGeneratorMetadata Metadata { get; }
+
     public LocalEmbeddingGenerator(int dimensions = 384)
     {
         if (dimensions < 8) throw new ArgumentOutOfRangeException(nameof(dimensions));
         Dimensions = dimensions;
+        Metadata = new EmbeddingGeneratorMetadata("LocalEmbeddingGenerator", null, null, dimensions);
     }
 
-    public Task<IReadOnlyList<float>> GenerateAsync(string text, CancellationToken cancellationToken = default)
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values,
+        EmbeddingGenerationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = new GeneratedEmbeddings<Embedding<float>>();
+        foreach (var text in values)
+        {
+            var vector = GenerateVector(text);
+            result.Add(new Embedding<float>(vector));
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<IReadOnlyList<float>> GenerateVectorAsync(string text, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<float>>(GenerateVector(text));
+    }
+
+    public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateVectorBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(texts);
+        cancellationToken.ThrowIfCancellationRequested();
+        var vectors = new IReadOnlyList<float>[texts.Count];
+        for (var index = 0; index < texts.Count; index++)
+        {
+            vectors[index] = GenerateVector(texts[index]);
+        }
+        return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(vectors);
+    }
+
+    private float[] GenerateVector(string text)
+    {
         var vector = new float[Dimensions];
+        if (string.IsNullOrWhiteSpace(text)) return vector;
+
         var tokens = text.ToLowerInvariant().Split([' ', '\t', '\r', '\n', '.', ',', '!', '?', ';', ':'], StringSplitOptions.RemoveEmptyEntries);
         foreach (var token in tokens)
         {
@@ -30,14 +71,7 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
         {
             TensorPrimitives.Divide(vector, norm, vector);
         }
-        return Task.FromResult<IReadOnlyList<float>>(vector);
-    }
-
-    public async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
-    {
-        var vectors = new IReadOnlyList<float>[texts.Count];
-        for (var index = 0; index < texts.Count; index++) vectors[index] = await GenerateAsync(texts[index], cancellationToken);
-        return vectors;
+        return vector;
     }
 
     private static int StableHash(ReadOnlySpan<char> value)
@@ -57,5 +91,12 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
             }
             return hash & int.MaxValue;
         }
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceType == typeof(LocalEmbeddingGenerator) ? this : null;
+
+    public void Dispose()
+    {
     }
 }
