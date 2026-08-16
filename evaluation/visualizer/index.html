@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mem0Sharp — Graph Memory Nodes Visualizer</title>
+  <meta name="description" content="Interactive visualizer for Mem0Sharp evaluation results, memory nodes, entity knowledge graphs, and retrieval pathways.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+
+  <!-- Top App Navigation Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <a href="#" class="brand-logo" id="brand-link">
+        <div class="brand-icon">M0</div>
+        <span>Mem0Sharp</span>
+      </a>
+      <span class="brand-badge">Memory Graph</span>
+    </div>
+
+    <!-- Header Selectors and Navigation Tabs -->
+    <div class="header-controls">
+      <div class="control-group">
+        <span class="control-label">Run</span>
+        <select id="run-select" class="select-input" aria-label="Select Evaluation Run">
+        </select>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Scenario</span>
+        <select id="scenario-select" class="select-input" aria-label="Select Scenario">
+        </select>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Graph View Modes">
+        <button class="tab-btn active" data-mode="retrieval" id="tab-retrieval">Retrieval & Memory</button>
+        <button class="tab-btn" data-mode="knowledge" id="tab-knowledge">Knowledge Graph</button>
+        <button class="tab-btn" data-mode="reasoning" id="tab-reasoning">Reasoning Chains</button>
+      </nav>
+    </div>
+
+    <!-- Header Actions (Smooth overflow without global scrollbar) -->
+    <div class="header-actions">
+      <label for="file-input" class="icon-btn" title="Upload custom evaluation JSON report" id="btn-upload">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </label>
+      <input type="file" id="file-input" accept=".json" style="display: none;">
+
+      <button class="icon-btn" id="btn-export-png" title="Export PNG Snapshot">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      </button>
+
+      <button class="icon-btn" id="btn-export-json" title="Export Graph JSON">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+
+      <button class="icon-btn" id="btn-fullscreen" title="Toggle Fullscreen">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+
+      <button class="icon-btn" id="open-help-btn" title="Help & Benchmark Info">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- App Main Layout -->
+  <div class="app-container">
+    
+    <!-- Left Filter & Controls Sidebar -->
+    <aside class="app-sidebar" id="app-sidebar">
+      
+      <!-- Search Section -->
+      <div class="sidebar-section">
+        <div class="section-title">Search & Filter</div>
+        <div class="search-wrapper">
+          <span class="search-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+          <input type="text" id="search-input" class="search-input" placeholder="Search memories, entities, questions..." autocomplete="off">
+          <button id="clear-search-btn" class="clear-search-btn" title="Clear search">&times;</button>
+        </div>
+      </div>
+
+      <!-- Question Categories -->
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>Question Categories</span>
+        </div>
+        <div class="chip-grid">
+          <div class="filter-chip active" data-cat="all" style="color: #cbd5e1;">All <span class="chip-count">(22)</span></div>
+          <div class="filter-chip active" data-cat="single-hop" style="color: var(--cat-single-hop);">
+            <span class="chip-dot" style="background: var(--cat-single-hop);"></span>Single-hop <span class="chip-count">(8)</span>
+          </div>
+          <div class="filter-chip active" data-cat="multi-hop" style="color: var(--cat-multi-hop);">
+            <span class="chip-dot" style="background: var(--cat-multi-hop);"></span>Multi-hop <span class="chip-count">(4)</span>
+          </div>
+          <div class="filter-chip active" data-cat="temporal" style="color: var(--cat-temporal);">
+            <span class="chip-dot" style="background: var(--cat-temporal);"></span>Temporal <span class="chip-count">(4)</span>
+          </div>
+          <div class="filter-chip active" data-cat="adversarial" style="color: var(--cat-adversarial);">
+            <span class="chip-dot" style="background: var(--cat-adversarial);"></span>Adversarial <span class="chip-count">(6)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verdict Filter -->
+      <div class="sidebar-section">
+        <div class="section-title">Judge Verdicts</div>
+        <div class="chip-grid">
+          <div class="filter-chip active" data-verdict="all">All Verdicts</div>
+          <div class="filter-chip" data-verdict="correct" style="color: var(--verdict-correct);">
+            <span class="chip-dot" style="background: var(--verdict-correct);"></span>Correct Only
+          </div>
+          <div class="filter-chip" data-verdict="incorrect" style="color: var(--verdict-incorrect);">
+            <span class="chip-dot" style="background: var(--verdict-incorrect);"></span>Incorrect Only
+          </div>
+          <div class="filter-chip" data-verdict="hit" style="color: var(--accent-cyan);">Retrieval Hits</div>
+          <div class="filter-chip" data-verdict="miss" style="color: var(--accent-rose);">Retrieval Misses</div>
+        </div>
+      </div>
+
+      <!-- Layout Mode -->
+      <div class="sidebar-section">
+        <div class="section-title">Graph Layout</div>
+        <div class="layout-radio-group">
+          <label class="radio-label">
+            <input type="radio" name="layout-mode" value="force" checked>
+            <span>Dual-Cluster Physics (Mara vs Leo)</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="layout-mode" value="bipartite">
+            <span>Bipartite Columns (Q &rarr; Mem &rarr; Ent)</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="layout-mode" value="radial">
+            <span>Concentric Radial Rings</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="layout-mode" value="timeline">
+            <span>Chronological Session Timeline</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Physics Simulation Controls -->
+      <div class="sidebar-section">
+        <div class="section-title">Physics Dynamics</div>
+        <div class="slider-group">
+          <div class="slider-item">
+            <div class="slider-header">
+              <span>Node Repulsion</span>
+              <span id="val-charge" class="slider-val">-520</span>
+            </div>
+            <input type="range" id="slider-charge" class="range-slider" min="-1200" max="-100" step="20" value="-520">
+          </div>
+
+          <div class="slider-item">
+            <div class="slider-header">
+              <span>Link Distance</span>
+              <span id="val-distance" class="slider-val">150</span>
+            </div>
+            <input type="range" id="slider-distance" class="range-slider" min="60" max="400" step="5" value="150">
+          </div>
+
+          <div class="slider-item">
+            <div class="slider-header">
+              <span>Center Gravity</span>
+              <span id="val-gravity" class="slider-val">0.015</span>
+            </div>
+            <input type="range" id="slider-gravity" class="range-slider" min="0.002" max="0.08" step="0.002" value="0.015">
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main Canvas Viewport -->
+    <main class="canvas-viewport" id="canvas-viewport">
+      <canvas id="graph-canvas"></canvas>
+
+      <!-- Floating Vertical Zoom Controls -->
+      <div class="zoom-controls-vertical" id="zoom-controls-vertical">
+        <button class="zoom-btn" id="btn-zoom-in" title="Zoom In (+)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <div class="zoom-slider-track">
+          <input type="range" id="slider-zoom-vertical" class="vertical-range-slider" min="0.2" max="3.0" step="0.05" value="0.65" orient="vertical">
+        </div>
+        <button class="zoom-btn" id="btn-zoom-out" title="Zoom Out (-)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <div class="zoom-level-indicator" id="zoom-level-val" title="Click to Reset to 100%">65%</div>
+      </div>
+
+      <!-- Floating Scenario Metrics HUD -->
+      <div class="scenario-hud" id="scenario-hud">
+        <div class="hud-header">
+          <div class="hud-title-wrap">
+            <span class="hud-tag">Evaluation Scenario</span>
+            <span class="hud-title" id="hud-title">baseline</span>
+          </div>
+        </div>
+        <div class="hud-desc" id="hud-desc">
+          Default pipeline: LLM extraction, hybrid search, deduplication on.
+        </div>
+
+        <div class="hud-grid">
+          <div class="hud-metric-card">
+            <span class="metric-label">Accuracy (J-Score)</span>
+            <div class="metric-value" id="hud-accuracy" style="color: var(--verdict-correct);">91% <span class="metric-sub">(20/22)</span></div>
+            <div class="confidence-interval" id="hud-accuracy-ci">95% CI [72%–97%]</div>
+          </div>
+
+          <div class="hud-metric-card">
+            <span class="metric-label">Retrieval Hit Rate</span>
+            <div class="metric-value" id="hud-retrieval" style="color: var(--accent-cyan);">100% <span class="metric-sub">(16/16)</span></div>
+            <div class="confidence-interval" id="hud-retrieval-ci">95% CI [81%–100%]</div>
+          </div>
+
+          <div class="hud-metric-card">
+            <span class="metric-label">Mean F1 / BLEU</span>
+            <div class="metric-value" id="hud-f1">0.45</div>
+            <div class="metric-sub">Token Overlap</div>
+          </div>
+
+          <div class="hud-metric-card">
+            <span class="metric-label">Search Latency</span>
+            <div class="metric-value" id="hud-latency">324 ms</div>
+            <div class="metric-sub"><span id="hud-memories">28</span> memories stored</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas Toolbar & Legend (Bottom Left) -->
+      <div class="canvas-bottom-left">
+        <div class="canvas-toolbar">
+          <button class="icon-btn" id="btn-reset-view" title="Reset View & Center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+          </button>
+          <button class="icon-btn active" id="btn-toggle-physics" title="Pause Physics Simulation">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          </button>
+        </div>
+
+        <div class="graph-legend">
+          <div class="legend-title">Legend</div>
+          <div class="legend-row">
+            <div class="legend-item"><span class="legend-dot" style="background: var(--verdict-correct); border: 2px solid #0f172a;"></span>Question (Correct)</div>
+            <div class="legend-item"><span class="legend-dot" style="background: var(--verdict-incorrect); border: 2px solid #0f172a;"></span>Question (Incorrect)</div>
+            <div class="legend-item"><span class="legend-dot" style="background: var(--color-memory);"></span>Memory Fact</div>
+            <div class="legend-item"><span class="legend-dot diamond" style="background: var(--color-person);"></span>Entity</div>
+            <div class="legend-item"><span class="legend-line" style="background: var(--accent-cyan);"></span>Retrieval Link</div>
+            <div class="legend-item"><span class="legend-line" style="background: var(--cat-multi-hop);"></span>Multi-hop Chain</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini-Map Navigator (Bottom Right) -->
+      <div class="minimap-container">
+        <canvas id="minimap-canvas" width="160" height="110"></canvas>
+      </div>
+
+      <!-- Hover Tooltip -->
+      <div class="canvas-tooltip" id="canvas-tooltip">
+        <div class="tooltip-badge">QUESTION</div>
+        <div class="tooltip-content">Tooltip content</div>
+      </div>
+
+      <!-- Loading Overlay -->
+      <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <div style="font-size: 13px; font-weight: 500; color: var(--text-secondary);">Loading evaluation run...</div>
+      </div>
+
+      <!-- Fallback Prompt for Direct Local Disk File Reference -->
+      <div class="local-file-prompt" id="local-file-prompt">
+      </div>
+    </main>
+
+    <!-- Right Slide-Over Inspector Drawer -->
+    <aside class="inspector-drawer" id="inspector-drawer">
+      <div class="inspector-header">
+        <div style="flex: 1;">
+          <div class="inspector-badges" id="inspector-badges">
+          </div>
+          <div class="inspector-title" id="inspector-title">Node Details</div>
+        </div>
+        <button class="close-btn" id="close-inspector-btn" title="Close Drawer">&times;</button>
+      </div>
+
+      <div class="inspector-body" id="inspector-body">
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Help & Benchmark Modal -->
+  <div class="modal-overlay" id="help-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">Mem0Sharp Graph Memory Visualizer Guide</div>
+        <button class="close-btn" id="close-help-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          This visualizer dynamically loads <strong>Mem0Sharp benchmark results directly from <code>evaluation/results/</code></strong>, rendering how memory extraction, deduplication, conflict resolution, reranking, and memory behaviors affect knowledge retrieval.
+        </p>
+
+        <h4>Graph Views</h4>
+        <ul>
+          <li><strong>Retrieval & Memory Graph:</strong> Connects test questions to the specific memories retrieved from PostgreSQL/pgvector and their extracted knowledge entities.</li>
+          <li><strong>Knowledge Graph:</strong> Displays the semantic Subject &rarr; Predicate &rarr; Object triple network extracted from conversation history.</li>
+          <li><strong>Reasoning Chains:</strong> Highlights multi-hop synthesis links and chronological temporal transitions across conversation sessions.</li>
+        </ul>
+
+        <h4>Interactions</h4>
+        <ul>
+          <li><code>Click + Drag</code> to pan canvas or reposition nodes.</li>
+          <li><code>Scroll Wheel / Pinch / Zoom Slider</code> to zoom in/out smoothly.</li>
+          <li><code>Click on any Node</code> to open the slide-over Inspector with answer comparisons and judge reasoning.</li>
+          <li><code>Search Bar</code> instantly highlights nodes and their 1-hop neighborhood.</li>
+          <li><code>Drag & Drop</code> any external <code>evaluation-*.json</code> file onto the window to visualize fresh evaluation runs.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -58,6 +58,7 @@ Each scenario ingests the same two multi-session conversations into fresh, scena
 Authoritative full run against the composed PostgreSQL/pgvector database with `gpt-5.6-luna` for extraction, answering, and judging, and `text-embedding-3-small` for embeddings. This run covers 12 scenarios over the built-in 22-question fixture, including the long-term memory lifecycle scenarios `realistic-long-haul` and `stale-forget`.
 
 Raw detailed reports: [Markdown](../evaluation/results/evaluation-20260815-100116.md) and [JSON](../evaluation/results/evaluation-20260815-100116.json).
+Interactive visualizer: [Mem0Sharp Graph Memory Visualizer](../evaluation/visualizer/index.html).
 
 | Scenario | Accuracy (J) | Mean F1 | Mean BLEU-1 | Retrieval hit rate | Memories | Mean search (ms) | Ingest (s) |
 | --- | --- | --- | --- | --- | --- | --- | --- |

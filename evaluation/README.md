@@ -101,6 +101,13 @@ Reports are written as JSON and Markdown under `evaluation/Mem0Sharp.Evaluation/
 
 Each scenario uses its own PostgreSQL tables (`eval_<scenario>`), reset at the start of every run, and scenario-scoped user ids, so reruns are reproducible and scenarios never contaminate each other.
 
+## Interactive Graph Memory Visualizer
+
+Mem0Sharp includes a zero-dependency vanilla HTML visualizer to explore evaluation results, memory nodes, entity knowledge graphs, and retrieval pathways:
+
+- Open [`evaluation/visualizer/index.html`](visualizer/index.html) in any browser, or read the [Visualizer Guide](visualizer/README.md).
+- Supports switching between all 12 scenarios, inspecting gold vs. generated answers and judge reasoning, filtering by question category, viewing knowledge graph triples, and dragging & dropping fresh evaluation JSON reports.
+
 ## Cost and determinism notes
 
 - A full run makes roughly 600–900 chat calls depending on the scenario mix (extraction per session, rerank and conflict-resolution calls, one answer and one judge call per question). Run a subset with `--scenario` while iterating.
