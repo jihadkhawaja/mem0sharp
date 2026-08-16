@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.2.1] - 2026-08-16
+
+### Added
+- **Admission Gate Defense Layer**: Added `NoveltyAdmissionGate`, `PromptInjectionAdmissionGate`, and `CompositeAdmissionGate` to reject duplicate or malicious memory candidates before persistence.
+- **Trajectory Tracking**: Extended `MemoryService` and the public contracts with trajectory persistence support, including `AppendTrajectoryAsync`, `GetTrajectoriesAsync`, and on-demand extraction from stored trajectories.
+- **History Rollback Support**: Added rollback and history restoration APIs to in-memory and persistence-backed stores, including `RollbackAsync` and `RollbackToHistoryAsync`.
+
+### Improved
+- **Memory Lifecycle Safety**: Hardened consolidation and stale-memory workflows by combining rollback/trajectory tracking with stricter admission filtering and verification paths.
+- **Test Coverage**: Expanded unit tests for admission gates, consolidation behavior, and memory behavior scenarios to cover the new safeguards and lifecycle features.
+
+---
+
 ## [v0.2.0] - 2026-08-15
 
 ### ⚠️ Breaking Changes
