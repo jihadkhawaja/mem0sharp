@@ -6,13 +6,13 @@ public sealed class CompositeAdmissionGate : IAdmissionGate
 
     public CompositeAdmissionGate(params IAdmissionGate[] gates)
     {
-        ArgumentNullException.ThrowIfNull(gates);
+        Guard.NotNull(gates);
         this.gates = gates;
     }
 
     public CompositeAdmissionGate(IEnumerable<IAdmissionGate> gates)
     {
-        ArgumentNullException.ThrowIfNull(gates);
+        Guard.NotNull(gates);
         this.gates = gates.ToArray();
     }
 
@@ -21,7 +21,7 @@ public sealed class CompositeAdmissionGate : IAdmissionGate
         IReadOnlyList<Memory> existingMemories,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         var reasons = new List<string>();
         var minScore = 1.0;
 

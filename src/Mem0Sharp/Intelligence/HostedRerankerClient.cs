@@ -18,7 +18,7 @@ internal static class HostedRerankerClient
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var body = await Compatibility.ReadAsStringAsync(response.Content, cancellationToken);
             throw new HttpRequestException($"{providerName} rerank request failed with {(int)response.StatusCode}: {body}");
         }
 
@@ -37,7 +37,7 @@ internal static class HostedRerankerClient
 
     public static SearchResult WithRerankScore(SearchResult candidate, double score)
     {
-        var normalized = double.IsFinite(score) ? Math.Clamp(score, 0, 1) : 0;
+        var normalized = Compatibility.IsFinite(score) ? Compatibility.Clamp(score, 0, 1) : 0;
         var details = candidate.ScoreDetails is null
             ? new SearchScoreDetails(candidate.Score, Reranker: normalized)
             : candidate.ScoreDetails with { Reranker = normalized };

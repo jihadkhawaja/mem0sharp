@@ -11,7 +11,7 @@ public enum EntityType
 
 public sealed record ExtractedEntity(string Text, EntityType Type = EntityType.Other);
 
-public sealed record MemoryEntity(string Id, string Text, EntityType Type, IReadOnlySet<string> LinkedMemoryIds);
+public sealed record MemoryEntity(string Id, string Text, EntityType Type, IReadOnlyCollection<string> LinkedMemoryIds);
 
 public sealed record ExtractedRelation(string Source, string Relationship, string Target);
 

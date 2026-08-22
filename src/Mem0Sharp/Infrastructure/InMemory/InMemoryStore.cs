@@ -40,7 +40,7 @@ public sealed class InMemoryStore : IMemoryStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         memories.TryGetValue(id, out var memory);
-        return Task.FromResult(memory);
+        return Task.FromResult<Memory?>(memory);
     }
 
     public async IAsyncEnumerable<Memory> GetAllAsync(MemoryFilter? filter = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -83,6 +83,14 @@ public sealed class InMemoryStore : IMemoryStore
             .ToArray();
 
         return Task.FromResult(results);
+    }
+
+    public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchBatchAsync(IReadOnlyList<IReadOnlyList<float>> embeddings, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
+    {
+        Guard.NotNull(embeddings);
+        var results = new List<IReadOnlyList<SearchResult>>(embeddings.Count);
+        foreach (var embedding in embeddings) results.Add(await SearchAsync(embedding, filter, topK, cancellationToken));
+        return results;
     }
 
     public Task DeleteAsync(string id, MemoryHistoryEntry? entry = null, CancellationToken cancellationToken = default)
@@ -174,7 +182,7 @@ public sealed class InMemoryStore : IMemoryStore
                 }
                 else
                 {
-                    var lastEntry = entriesBefore[^1];
+                    var lastEntry = entriesBefore[entriesBefore.Length - 1];
                     if (lastEntry.IsDeleted || lastEntry.Event == MemoryHistoryEvent.Delete || string.IsNullOrEmpty(lastEntry.NewMemory))
                     {
                         // Was deleted at pointInTime
@@ -188,11 +196,12 @@ public sealed class InMemoryStore : IMemoryStore
                     else
                     {
                         // Active at pointInTime
+                        var restoredText = lastEntry.NewMemory!;
                         if (memories.TryGetValue(memoryId, out var current))
                         {
-                            if (current.Text != lastEntry.NewMemory)
+                            if (current.Text != restoredText)
                             {
-                                memories[memoryId] = current with { Text = lastEntry.NewMemory, UpdatedAt = lastEntry.UpdatedAt };
+                                memories[memoryId] = current with { Text = restoredText, UpdatedAt = lastEntry.UpdatedAt };
                                 restored++;
                                 affected.Add(memoryId);
                             }
@@ -203,7 +212,7 @@ public sealed class InMemoryStore : IMemoryStore
                             memories[memoryId] = new Memory
                             {
                                 Id = memoryId,
-                                Text = lastEntry.NewMemory,
+                                Text = restoredText,
                                 UserId = filter?.UserId ?? "default_user",
                                 AgentId = filter?.AgentId,
                                 RunId = filter?.RunId,

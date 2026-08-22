@@ -112,13 +112,13 @@ internal static class HybridSearchScorer
             }
             else if (start >= 0)
             {
-                tokens.Add(span[start..i].ToString().ToLowerInvariant());
+                tokens.Add(span.Slice(start, i - start).ToString().ToLowerInvariant());
                 start = -1;
             }
         }
         if (start >= 0)
         {
-            tokens.Add(span[start..].ToString().ToLowerInvariant());
+            tokens.Add(span.Slice(start).ToString().ToLowerInvariant());
         }
         return tokens.ToArray();
     }

@@ -1,21 +1,20 @@
 # Getting started
 
-Mem0Sharp targets .NET 10 and exposes the `MemoryService` API for long-term application memory.
+Mem0Sharp targets .NET Standard 2.0, .NET 8, .NET 9, and .NET 10 and exposes the `MemoryService` API for long-term application memory.
 
 For a complete executable version of this guide, run the [getting started sample](../samples/GettingStarted/README.md).
 
 ## Install
 
-Mem0Sharp targets .NET 10. Install the NuGet package for an application:
+Install the NuGet package in a compatible .NET Standard 2.0 or .NET 8-10 application:
 
 ```powershell
 dotnet add package Mem0Sharp
 ```
 
-The `Mem0Sharp` package has no runtime package dependencies. The default
-in-memory path uses only .NET 10 and the base class libraries. Install
-`Mem0Sharp.PostgreSQL` or `Mem0Sharp.SQLite` only when the application needs
-those persistence providers; they carry their own database dependencies.
+The default in-memory path runs entirely in process. Install `Mem0Sharp.PostgreSQL`
+or `Mem0Sharp.SQLite` only when the application needs those persistence providers;
+they carry their own database dependencies.
 
 Reference the project instead when developing against a local checkout:
 

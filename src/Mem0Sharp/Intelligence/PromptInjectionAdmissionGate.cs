@@ -31,7 +31,7 @@ public sealed class PromptInjectionAdmissionGate : IAdmissionGate
         IReadOnlyList<Memory> existingMemories,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         var text = context.Text.ToLowerInvariant();
 
         foreach (var signature in signatures)

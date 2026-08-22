@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.2.2] - 2026-08-22
+
+### Added
+- Multi-targeted the core, PostgreSQL, and SQLite packages for .NET Standard 2.0, .NET 8, .NET 9, and .NET 10.
+- Added per-target test execution plus runtime smoke coverage for the .NET Standard 2.0 package assets.
+
+---
+
 ## [v0.2.1] - 2026-08-16
 
 ### Added

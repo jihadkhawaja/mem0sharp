@@ -227,7 +227,7 @@ public sealed class SqliteMemoryStoreTests
             await store.ResetAsync();
 
             Assert.Empty(await store.GetHistoryAsync(memory.Id));
-            Assert.Empty(await store.GetAllAsync().ToListAsync());
+            Assert.Empty(await MaterializeAsync(store.GetAllAsync()));
         }
         finally
         {
@@ -250,7 +250,7 @@ public sealed class SqliteMemoryStoreTests
                 new MemoryVectorRecord(Memory("second", "alice"), [1, 0, 0])
             ]));
 
-            Assert.Empty(await store.GetAllAsync().ToListAsync());
+            Assert.Empty(await MaterializeAsync(store.GetAllAsync()));
         }
         finally
         {
@@ -276,7 +276,7 @@ public sealed class SqliteMemoryStoreTests
                 new MemoryWriteRecord(second, [0, 1], History(historyId, second))
             ]));
 
-            Assert.Empty(await store.GetAllAsync().ToListAsync());
+            Assert.Empty(await MaterializeAsync(store.GetAllAsync()));
             Assert.Empty(await store.GetHistoryAsync(first.Id));
             Assert.Empty(await store.GetHistoryAsync(second.Id));
         }
@@ -285,6 +285,13 @@ public sealed class SqliteMemoryStoreTests
             SqliteConnection.ClearAllPools();
             File.Delete(databasePath);
         }
+    }
+
+    private static async Task<IReadOnlyList<T>> MaterializeAsync<T>(IAsyncEnumerable<T> source)
+    {
+        var items = new List<T>();
+        await foreach (var item in source) items.Add(item);
+        return items;
     }
 
     private static Memory Memory(string text, string userId) => new()

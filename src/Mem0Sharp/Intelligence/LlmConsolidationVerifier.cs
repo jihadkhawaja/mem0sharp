@@ -10,7 +10,7 @@ public sealed class LlmConsolidationVerifier : IConsolidationVerifier
 
     public LlmConsolidationVerifier(IChatClient chatClient, double threshold = 0.7)
     {
-        ArgumentNullException.ThrowIfNull(chatClient);
+        Guard.NotNull(chatClient);
         this.chatClient = chatClient;
         this.threshold = threshold;
     }
@@ -20,8 +20,8 @@ public sealed class LlmConsolidationVerifier : IConsolidationVerifier
         string consolidatedSummary,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(sourceMemories);
-        ArgumentException.ThrowIfNullOrWhiteSpace(consolidatedSummary);
+        Guard.NotNull(sourceMemories);
+        Guard.NotNullOrWhiteSpace(consolidatedSummary);
 
         if (sourceMemories.Count == 0)
         {
@@ -72,7 +72,7 @@ public sealed class LlmConsolidationVerifier : IConsolidationVerifier
         if (start < 0 || end <= start) return null;
         try
         {
-            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
+            using var doc = JsonDocument.Parse(text.Substring(start, end - start + 1));
             var root = doc.RootElement;
             var isValid = root.TryGetProperty("isValid", out var v) && v.GetBoolean();
             var score = root.TryGetProperty("entailmentScore", out var s) && s.TryGetDouble(out var d) ? d : (isValid ? 1.0 : 0.0);

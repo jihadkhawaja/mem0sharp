@@ -80,7 +80,7 @@ public sealed class InMemoryEntityStore : IEntityStore
         return Task.CompletedTask;
     }
 
-    private static string Normalize(string text) => string.Join(' ', text.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    private static string Normalize(string text) => string.Join(" ", text.Trim().ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
 
-    private sealed record EntityState(string Id, string Text, EntityType Type, IReadOnlySet<string> LinkedMemoryIds);
+    private sealed record EntityState(string Id, string Text, EntityType Type, IReadOnlyCollection<string> LinkedMemoryIds);
 }

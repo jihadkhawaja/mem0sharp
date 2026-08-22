@@ -22,7 +22,7 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
         EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(values);
+        Guard.NotNull(values);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = new GeneratedEmbeddings<Embedding<float>>();
@@ -43,7 +43,7 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
 
     public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateVectorBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(texts);
+        Guard.NotNull(texts);
         cancellationToken.ThrowIfCancellationRequested();
         var vectors = new IReadOnlyList<float>[texts.Count];
         for (var index = 0; index < texts.Count; index++)
@@ -79,16 +79,8 @@ public sealed class LocalEmbeddingGenerator : IEmbeddingGenerator
         unchecked
         {
             var hash = 17;
-            Span<byte> utf8Bytes = stackalloc byte[128];
-            if (Encoding.UTF8.TryGetBytes(value, utf8Bytes, out var written))
-            {
-                foreach (var b in utf8Bytes[..written]) hash = hash * 31 + b;
-            }
-            else
-            {
-                var heapBytes = Encoding.UTF8.GetBytes(value.ToString());
-                foreach (var b in heapBytes) hash = hash * 31 + b;
-            }
+            var utf8Bytes = Encoding.UTF8.GetBytes(value.ToString());
+            foreach (var valueByte in utf8Bytes) hash = hash * 31 + valueByte;
             return hash & int.MaxValue;
         }
     }

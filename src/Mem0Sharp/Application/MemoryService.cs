@@ -59,7 +59,7 @@ public sealed class MemoryService : IMemoryService
 
     public Task<AddResult> AddAsync(string text, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        Guard.NotNullOrWhiteSpace(text);
         var addOptions = options ?? new MemoryAddOptions();
         if (addOptions.Infer && addOptions.Behavior != MemoryBehavior.Normal)
         {
@@ -82,7 +82,7 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<AddResult> AddAsync(IEnumerable<Message> messages, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(messages);
+        Guard.NotNull(messages);
         var addOptions = options ?? new MemoryAddOptions();
         var materialized = messages.ToArray();
         if (string.Equals(addOptions.MemoryType, "procedural_memory", StringComparison.OrdinalIgnoreCase))
@@ -108,14 +108,14 @@ public sealed class MemoryService : IMemoryService
 
     public Task<AddResult> AddManyAsync(IEnumerable<string> texts, MemoryAddOptions? options = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(texts);
+        Guard.NotNull(texts);
         var addOptions = options ?? new MemoryAddOptions();
         return SaveInputsAsync(texts.Select(text => new MemoryInput(text, addOptions.Scope, addOptions.Metadata, addOptions.ExpiresAt, addOptions.Behavior, addOptions.MemoryType)), addOptions, cancellationToken);
     }
 
     public Task<IReadOnlyList<SearchResult>> SearchAsync(string query, MemorySearchOptions? searchOptions = null, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        Guard.NotNullOrWhiteSpace(query);
         var effective = searchOptions ?? new MemorySearchOptions { TopK = options.DefaultTopK, Threshold = options.MinimumScore, Hybrid = options.EnableHybridSearch };
         return SearchCoreAsync(query, effective, cancellationToken);
     }
@@ -137,7 +137,7 @@ public sealed class MemoryService : IMemoryService
     private async Task<IReadOnlyList<SearchResult>> RankSearchResultsAsync(string query, MemorySearchOptions searchOptions, IReadOnlyList<SearchResult> semanticResults, CancellationToken cancellationToken)
     {
         var queryEntities = await entityExtractor.ExtractAsync(query, cancellationToken);
-        var entityBoosts = new Dictionary<string, double>(await entityStore.GetMemoryBoostsAsync(queryEntities, cancellationToken), StringComparer.Ordinal);
+        var entityBoosts = (await entityStore.GetMemoryBoostsAsync(queryEntities, cancellationToken)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         if (graphStore is not null)
         {
             foreach (var boost in await graphStore.GetMemoryBoostsAsync(query, cancellationToken))
@@ -165,7 +165,7 @@ public sealed class MemoryService : IMemoryService
 
     private static IReadOnlyList<SearchResult> ApplyRecencyBias(IReadOnlyList<SearchResult> ranked, MemorySearchOptions searchOptions)
     {
-        var recencyBias = Math.Clamp(searchOptions.RecencyBias, 0d, 1d);
+        var recencyBias = Compatibility.Clamp(searchOptions.RecencyBias, 0d, 1d);
         if (recencyBias <= 0) return ranked;
         var window = searchOptions.FreshnessWindow ?? TimeSpan.FromDays(30);
         if (window <= TimeSpan.Zero) window = TimeSpan.FromDays(30);
@@ -175,7 +175,7 @@ public sealed class MemoryService : IMemoryService
             .Select(result =>
             {
                 var age = now - result.Memory.UpdatedAt;
-                var freshness = age <= TimeSpan.Zero ? 1d : Math.Clamp(1d - age.TotalSeconds / window.TotalSeconds, 0d, 1d);
+                var freshness = age <= TimeSpan.Zero ? 1d : Compatibility.Clamp(1d - age.TotalSeconds / window.TotalSeconds, 0d, 1d);
                 var boostedScore = result.Score * (1d - recencyBias) + freshness * recencyBias;
                 return result with { Score = boostedScore };
             })
@@ -185,9 +185,9 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchManyAsync(IEnumerable<string> queries, MemorySearchOptions? searchOptions = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(queries);
+        Guard.NotNull(queries);
         var materialized = queries.ToArray();
-        foreach (var query in materialized) ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        foreach (var query in materialized) Guard.NotNullOrWhiteSpace(query);
         if (materialized.Length == 0) return [];
 
         var effective = searchOptions ?? new MemorySearchOptions { TopK = options.DefaultTopK, Threshold = options.MinimumScore, Hybrid = options.EnableHybridSearch };
@@ -214,7 +214,7 @@ public sealed class MemoryService : IMemoryService
 
     public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string id, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        Guard.NotNullOrWhiteSpace(id);
         return store.GetHistoryAsync(id, cancellationToken);
     }
 
@@ -227,7 +227,7 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<MemoryPage> GetPageAsync(MemoryPageOptions pageOptions, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(pageOptions);
+        Guard.NotNull(pageOptions);
         if (pageOptions.Offset < 0) throw new ArgumentOutOfRangeException(nameof(pageOptions));
         if (pageOptions.Limit < 0) throw new ArgumentOutOfRangeException(nameof(pageOptions));
         var memories = await GetAllAsync(filter, cancellationToken);
@@ -309,7 +309,7 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(historyEntryId);
+        Guard.NotNullOrWhiteSpace(historyEntryId);
         var result = await store.RollbackToHistoryAsync(historyEntryId, cancellationToken);
         await indexLock.WaitAsync(cancellationToken);
         try
@@ -325,14 +325,14 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<TrajectoryRecord> AppendTrajectoryAsync(TrajectoryRecord record, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(record);
+        Guard.NotNull(record);
         await trajectoryStore.AppendTrajectoryAsync(record, cancellationToken);
         return record;
     }
 
     public async Task<IReadOnlyList<Memory>> ExtractOnDemandAsync(string queryOrTask, MemoryFilter? filter = null, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(queryOrTask);
+        Guard.NotNullOrWhiteSpace(queryOrTask);
         var matchingTrajectories = new List<TrajectoryRecord>();
         await foreach (var trajectory in trajectoryStore.GetTrajectoriesAsync(filter, cancellationToken))
         {
@@ -359,8 +359,8 @@ public sealed class MemoryService : IMemoryService
 
     public async Task<Memory> UpdateAsync(string id, MemoryUpdate update, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(update);
-        if (update.Text is not null) ArgumentException.ThrowIfNullOrWhiteSpace(update.Text);
+        Guard.NotNull(update);
+        if (update.Text is not null) Guard.NotNullOrWhiteSpace(update.Text);
         var existing = await store.GetAsync(id, cancellationToken) ?? throw new KeyNotFoundException($"Memory '{id}' was not found.");
         var updated = existing with
         {
@@ -481,7 +481,7 @@ public sealed class MemoryService : IMemoryService
                 continue;
             }
             var now = DateTimeOffset.UtcNow;
-            var metadata = new Dictionary<string, string>(addOptions.Metadata ?? new Dictionary<string, string>());
+            var metadata = (addOptions.Metadata ?? new Dictionary<string, string>()).ToDictionary(pair => pair.Key, pair => pair.Value);
             if (input.Metadata is not null)
             {
                 foreach (var item in input.Metadata) metadata[item.Key] = item.Value;
@@ -576,7 +576,7 @@ public sealed class MemoryService : IMemoryService
         return (searchOptions.Filter ?? new MemoryFilter()) with { Behavior = MemoryBehavior.Normal };
     }
 
-    private static string ComputeHash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+    private static string ComputeHash(string text) => Compatibility.Sha256Hex(text);
 
     public Task<IReadOnlyList<MemoryRelation>> GetRelationsAsync(string? query = null, CancellationToken cancellationToken = default) =>
         graphStore?.GetRelationsAsync(query, cancellationToken) ?? Task.FromResult<IReadOnlyList<MemoryRelation>>([]);

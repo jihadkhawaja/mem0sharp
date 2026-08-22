@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Npgsql;
@@ -14,7 +12,7 @@ public sealed class PostgresEntityStore : IEntityStore
 
     public PostgresEntityStore(PostgresMemoryStoreOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        Guard.NotNull(options);
         connectionString = options.ConnectionString;
         tableName = PostgresIdentifier.Table(options.TableName + "_entities");
     }
@@ -22,7 +20,7 @@ public sealed class PostgresEntityStore : IEntityStore
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"""
+        using var command = new NpgsqlCommand($"""
             CREATE TABLE IF NOT EXISTS {tableName} (
                 id text PRIMARY KEY,
                 normalized_text text NOT NULL UNIQUE,
@@ -38,10 +36,10 @@ public sealed class PostgresEntityStore : IEntityStore
     {
         if (entities.Count == 0) return;
         await using var connection = await OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        using var transaction = connection.BeginTransaction();
         foreach (var entity in entities.GroupBy(item => Normalize(item.Text), StringComparer.Ordinal).Select(group => group.First()))
         {
-            await using var command = new NpgsqlCommand($"""
+            using var command = new NpgsqlCommand($"""
                 INSERT INTO {tableName} (id, normalized_text, text_value, entity_type, linked_memory_ids)
                 VALUES ($1, $2, $3, $4, jsonb_build_array($5::text))
                 ON CONFLICT (normalized_text) DO UPDATE SET
@@ -59,13 +57,13 @@ public sealed class PostgresEntityStore : IEntityStore
             command.Parameters.AddWithValue(memoryId);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
+        transaction.Commit();
     }
 
     public async Task RemoveMemoryAsync(string memoryId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"""
+        using var command = new NpgsqlCommand($"""
             UPDATE {tableName} SET linked_memory_ids = linked_memory_ids - $1 WHERE linked_memory_ids ? $1;
             DELETE FROM {tableName} WHERE jsonb_array_length(linked_memory_ids) = 0;
             """, connection);
@@ -79,7 +77,7 @@ public sealed class PostgresEntityStore : IEntityStore
         if (normalized.Length == 0) return new Dictionary<string, double>();
         await using var connection = await OpenAsync(cancellationToken);
         var placeholders = normalized.Select((_, index) => $"${index + 1}").ToArray();
-        await using var command = new NpgsqlCommand($"SELECT linked_memory_ids FROM {tableName} WHERE normalized_text IN ({string.Join(", ", placeholders)})", connection);
+        using var command = new NpgsqlCommand($"SELECT linked_memory_ids FROM {tableName} WHERE normalized_text IN ({string.Join(", ", placeholders)})", connection);
         foreach (var value in normalized) command.Parameters.AddWithValue(value);
         var boosts = new Dictionary<string, double>(StringComparer.Ordinal);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -95,7 +93,7 @@ public sealed class PostgresEntityStore : IEntityStore
     public async Task<IReadOnlyList<MemoryEntity>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"SELECT id, text_value, entity_type, linked_memory_ids FROM {tableName} ORDER BY normalized_text", connection);
+        using var command = new NpgsqlCommand($"SELECT id, text_value, entity_type, linked_memory_ids FROM {tableName} ORDER BY normalized_text", connection);
         var entities = new List<MemoryEntity>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -109,7 +107,7 @@ public sealed class PostgresEntityStore : IEntityStore
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"TRUNCATE TABLE {tableName}", connection);
+        using var command = new NpgsqlCommand($"TRUNCATE TABLE {tableName}", connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -120,7 +118,7 @@ public sealed class PostgresEntityStore : IEntityStore
         return connection;
     }
 
-    private static string Normalize(string text) => string.Join(' ', text.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    private static string Normalize(string text) => string.Join(" ", text.Trim().ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
 }
 
 public sealed class PostgresGraphStore : IGraphMemoryStore
@@ -130,7 +128,7 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
 
     public PostgresGraphStore(PostgresMemoryStoreOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        Guard.NotNull(options);
         connectionString = options.ConnectionString;
         tableName = PostgresIdentifier.Table(options.TableName + "_relations");
     }
@@ -138,7 +136,7 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"""
+        using var command = new NpgsqlCommand($"""
             CREATE TABLE IF NOT EXISTS {tableName} (
                 id text PRIMARY KEY,
                 source text NOT NULL,
@@ -155,10 +153,10 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     {
         if (relations.Count == 0) return;
         await using var connection = await OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        using var transaction = connection.BeginTransaction();
         foreach (var relation in relations.Where(IsValid).Distinct())
         {
-            await using var command = new NpgsqlCommand($"INSERT INTO {tableName} (id, source, relationship, target, memory_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING", connection, transaction);
+            using var command = new NpgsqlCommand($"INSERT INTO {tableName} (id, source, relationship, target, memory_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING", connection, transaction);
             command.Parameters.AddWithValue(RelationId(relation, memoryId));
             command.Parameters.AddWithValue(relation.Source.Trim());
             command.Parameters.AddWithValue(relation.Relationship.Trim());
@@ -166,25 +164,25 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
             command.Parameters.AddWithValue(memoryId);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
+        transaction.Commit();
     }
 
     public async Task RemoveMemoryAsync(string memoryId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"DELETE FROM {tableName} WHERE memory_id = $1", connection);
+        using var command = new NpgsqlCommand($"DELETE FROM {tableName} WHERE memory_id = $1", connection);
         command.Parameters.AddWithValue(memoryId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<string, double>> GetMemoryBoostsAsync(string query, CancellationToken cancellationToken = default)
     {
-        var terms = Normalize(query).Split(' ', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToArray();
+        var terms = Normalize(query).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToArray();
         if (terms.Length == 0) return new Dictionary<string, double>();
 
         var patterns = terms.Select(term => $"%{term}%").ToArray();
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"SELECT source, relationship, target, memory_id FROM {tableName} WHERE source ILIKE ANY($1) OR relationship ILIKE ANY($1) OR target ILIKE ANY($1)", connection);
+        using var command = new NpgsqlCommand($"SELECT source, relationship, target, memory_id FROM {tableName} WHERE source ILIKE ANY($1) OR relationship ILIKE ANY($1) OR target ILIKE ANY($1)", connection);
         command.Parameters.AddWithValue(patterns);
 
         var boosts = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -203,7 +201,7 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
         NpgsqlCommand command;
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var pattern = $"%{query.Trim()}%";
+            var pattern = $"%{query!.Trim()}%";
             command = new NpgsqlCommand($"SELECT id, source, relationship, target, memory_id FROM {tableName} WHERE source ILIKE $1 OR relationship ILIKE $1 OR target ILIKE $1 ORDER BY source, relationship, target", connection);
             command.Parameters.AddWithValue(pattern);
         }
@@ -212,7 +210,7 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
             command = new NpgsqlCommand($"SELECT id, source, relationship, target, memory_id FROM {tableName} ORDER BY source, relationship, target", connection);
         }
 
-        await using (command)
+        using (command)
         {
             var relations = new List<MemoryRelation>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -227,7 +225,7 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand($"TRUNCATE TABLE {tableName}", connection);
+        using var command = new NpgsqlCommand($"TRUNCATE TABLE {tableName}", connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -241,21 +239,20 @@ public sealed class PostgresGraphStore : IGraphMemoryStore
     private static string RelationId(ExtractedRelation relation, string memoryId)
     {
         var key = $"{Normalize(relation.Source)}|{Normalize(relation.Relationship)}|{Normalize(relation.Target)}|{memoryId}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
+        return Compatibility.Sha256Hex(key);
     }
 
     private static bool IsValid(ExtractedRelation relation) => !string.IsNullOrWhiteSpace(relation.Source) && !string.IsNullOrWhiteSpace(relation.Relationship) && !string.IsNullOrWhiteSpace(relation.Target);
-    private static string Normalize(string text) => string.Join(' ', text.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    private static string Normalize(string text) => string.Join(" ", text.Trim().ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
 }
 
-internal static partial class PostgresIdentifier
+internal static class PostgresIdentifier
 {
-    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
-    private static partial Regex Pattern();
+    private static readonly Regex Pattern = new("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static string Table(string value)
     {
-        if (!Pattern().IsMatch(value)) throw new ArgumentException("PostgreSQL object names must be simple identifiers.", nameof(value));
+        if (!Pattern.IsMatch(value)) throw new ArgumentException("PostgreSQL object names must be simple identifiers.", nameof(value));
         return $"\"{value}\"";
     }
 

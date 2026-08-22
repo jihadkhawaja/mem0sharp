@@ -27,11 +27,11 @@ public sealed class InMemoryGraphStore : IGraphMemoryStore
     public Task<IReadOnlyDictionary<string, double>> GetMemoryBoostsAsync(string query, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var terms = Normalize(query).Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        var terms = Normalize(query).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
         var boosts = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var relation in relations.Values)
         {
-            var relationTerms = Normalize($"{relation.Source} {relation.Relationship} {relation.Target}").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var relationTerms = Normalize($"{relation.Source} {relation.Relationship} {relation.Target}").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (!relationTerms.Any(terms.Contains)) continue;
             boosts[relation.MemoryId] = Math.Min(0.5, boosts.GetValueOrDefault(relation.MemoryId) + 0.25);
         }
@@ -59,5 +59,5 @@ public sealed class InMemoryGraphStore : IGraphMemoryStore
 
     private static bool IsValid(ExtractedRelation relation) => !string.IsNullOrWhiteSpace(relation.Source) && !string.IsNullOrWhiteSpace(relation.Relationship) && !string.IsNullOrWhiteSpace(relation.Target);
 
-    private static string Normalize(string text) => string.Join(' ', text.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    private static string Normalize(string text) => string.Join(" ", text.Trim().ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
 }

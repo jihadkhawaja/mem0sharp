@@ -14,6 +14,7 @@ For security vulnerabilities, follow the private reporting process in the reposi
 ## Development prerequisites
 
 - .NET 10 SDK
+- .NET 8 and .NET 9 runtimes to execute the complete target-framework test matrix
 - Git
 - PostgreSQL with the `vector` extension only when working on the PostgreSQL provider or its integration scenarios
 
@@ -42,6 +43,7 @@ Run the same checks used by the package publishing workflow:
 ```powershell
 dotnet build .\Mem0Sharp.slnx
 dotnet test .\tests\Mem0Sharp.Tests\Mem0Sharp.Tests.csproj
+dotnet test .\tests\Mem0Sharp.NetStandard.Tests\Mem0Sharp.NetStandard.Tests.csproj
 ```
 
 For a release-style local check, use the `Release` configuration:
@@ -49,6 +51,7 @@ For a release-style local check, use the `Release` configuration:
 ```powershell
 dotnet build .\Mem0Sharp.slnx --configuration Release
 dotnet test .\tests\Mem0Sharp.Tests\Mem0Sharp.Tests.csproj --configuration Release
+dotnet test .\tests\Mem0Sharp.NetStandard.Tests\Mem0Sharp.NetStandard.Tests.csproj --configuration Release
 ```
 
 When adding or changing behavior, add or update an xUnit test in `tests/Mem0Sharp.Tests`. Prefer tests that exercise the public service or contract involved in the change. Keep tests deterministic and avoid requiring network access or external services unless the scenario specifically covers an integration boundary.

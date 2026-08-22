@@ -23,9 +23,9 @@ public sealed class AuthorityAdmissionGate : IAdmissionGate
         IReadOnlyList<Memory> existingMemories,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
 
-        if (!string.IsNullOrWhiteSpace(context.Role) && untrustedRoles.Contains(context.Role))
+        if (!string.IsNullOrWhiteSpace(context.Role) && untrustedRoles.Contains(context.Role!))
         {
             if (context.Scope is MemoryScope.Agent or MemoryScope.User)
             {

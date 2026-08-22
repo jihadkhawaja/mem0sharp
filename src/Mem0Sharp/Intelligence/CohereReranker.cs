@@ -11,9 +11,9 @@ public sealed class CohereReranker : IMemoryReranker
 
     public CohereReranker(HttpClient httpClient, string apiKey, string model = "rerank-v3.5", int maxChunksPerDocument = 10, Uri? endpoint = null)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
-        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+        Guard.NotNull(httpClient);
+        Guard.NotNullOrWhiteSpace(apiKey);
+        Guard.NotNullOrWhiteSpace(model);
         if (maxChunksPerDocument < 1) throw new ArgumentOutOfRangeException(nameof(maxChunksPerDocument));
         this.httpClient = httpClient;
         this.apiKey = apiKey;
@@ -39,8 +39,8 @@ public sealed class CohereReranker : IMemoryReranker
 
     private static void Validate(string query, IReadOnlyList<SearchResult> candidates, int topK)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
-        ArgumentNullException.ThrowIfNull(candidates);
+        Guard.NotNullOrWhiteSpace(query);
+        Guard.NotNull(candidates);
         if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
     }
 }

@@ -31,7 +31,7 @@ internal static class MemoryFilterEvaluator
 
     private static bool MatchesCondition(IReadOnlyDictionary<string, string> metadata, MetadataFilter condition)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(condition.Key);
+        Guard.NotNullOrWhiteSpace(condition.Key);
         var exists = metadata.TryGetValue(condition.Key, out var actual);
         if (condition.Operator == FilterOperator.Exists) return exists == Convert.ToBoolean(condition.Value ?? true, CultureInfo.InvariantCulture);
         if (!exists) return false;

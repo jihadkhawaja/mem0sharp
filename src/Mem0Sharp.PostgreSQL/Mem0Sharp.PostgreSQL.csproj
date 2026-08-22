@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>netstandard2.0;net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
@@ -20,7 +20,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mem0Sharp\Mem0Sharp.csproj" />
-    <PackageReference Include="Npgsql" Version="9.0.4" />
+    <PackageReference Include="Npgsql" Version="7.0.7" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="Npgsql" Version="9.0.4" Condition="'$(TargetFramework)' != 'netstandard2.0'" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\assets\icon.png" Pack="true" PackagePath="icon.png" />

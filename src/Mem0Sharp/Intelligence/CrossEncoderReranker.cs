@@ -7,15 +7,15 @@ public sealed class CrossEncoderReranker : IMemoryReranker
 
     public CrossEncoderReranker(ICrossEncoderScorer scorer, bool normalizeScores = true)
     {
-        ArgumentNullException.ThrowIfNull(scorer);
+        Guard.NotNull(scorer);
         this.scorer = scorer;
         this.normalizeScores = normalizeScores;
     }
 
     public async Task<IReadOnlyList<SearchResult>> RerankAsync(string query, IReadOnlyList<SearchResult> candidates, int topK, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
-        ArgumentNullException.ThrowIfNull(candidates);
+        Guard.NotNullOrWhiteSpace(query);
+        Guard.NotNull(candidates);
         if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
         if (candidates.Count == 0 || topK == 0) return [];
 
@@ -30,7 +30,7 @@ public sealed class CrossEncoderReranker : IMemoryReranker
 
     private double Normalize(double score)
     {
-        if (!double.IsFinite(score)) return 0;
+        if (!Compatibility.IsFinite(score)) return 0;
         return normalizeScores ? 1 / (1 + Math.Exp(-score)) : score;
     }
 }

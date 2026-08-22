@@ -15,6 +15,8 @@
     <Project Path="src/Mem0Sharp.PostgreSQL/Mem0Sharp.PostgreSQL.csproj" />
     <Project Path="src/Mem0Sharp.SQLite/Mem0Sharp.SQLite.csproj" />
   </Folder>
+  <Folder Name="/tests/" />
   <Project Path="src/Mem0Sharp/Mem0Sharp.csproj" />
+  <Project Path="tests/Mem0Sharp.NetStandard.Tests/Mem0Sharp.NetStandard.Tests.csproj" />
   <Project Path="tests/Mem0Sharp.Tests/Mem0Sharp.Tests.csproj" />
 </Solution>

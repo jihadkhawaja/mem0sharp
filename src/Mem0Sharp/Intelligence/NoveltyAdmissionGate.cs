@@ -14,7 +14,7 @@ public sealed class NoveltyAdmissionGate : IAdmissionGate
         IReadOnlyList<Memory> existingMemories,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Guard.NotNull(context);
         if (existingMemories.Count == 0)
         {
             return Task.FromResult(new MemoryAdmissionDecision(true, 1.0, "Initial memory admission."));

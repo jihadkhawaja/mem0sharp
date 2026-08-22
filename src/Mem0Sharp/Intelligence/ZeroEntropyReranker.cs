@@ -10,9 +10,9 @@ public sealed class ZeroEntropyReranker : IMemoryReranker
 
     public ZeroEntropyReranker(HttpClient httpClient, string apiKey, string model = "zerank-1", Uri? endpoint = null)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
-        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+        Guard.NotNull(httpClient);
+        Guard.NotNullOrWhiteSpace(apiKey);
+        Guard.NotNullOrWhiteSpace(model);
         this.httpClient = httpClient;
         this.apiKey = apiKey;
         this.model = model;
@@ -21,8 +21,8 @@ public sealed class ZeroEntropyReranker : IMemoryReranker
 
     public Task<IReadOnlyList<SearchResult>> RerankAsync(string query, IReadOnlyList<SearchResult> candidates, int topK, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
-        ArgumentNullException.ThrowIfNull(candidates);
+        Guard.NotNullOrWhiteSpace(query);
+        Guard.NotNull(candidates);
         if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
         var payload = new
         {

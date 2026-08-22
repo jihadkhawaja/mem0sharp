@@ -9,7 +9,7 @@ public sealed class LlmGraphMemoryExtractor : IGraphMemoryExtractor
 
     public LlmGraphMemoryExtractor(IChatClient client)
     {
-        ArgumentNullException.ThrowIfNull(client);
+        Guard.NotNull(client);
         this.client = client;
     }
 

@@ -9,7 +9,7 @@ public sealed class LlmMemoryExtractor : IMemoryExtractor
 
     public LlmMemoryExtractor(IChatClient client)
     {
-        ArgumentNullException.ThrowIfNull(client);
+        Guard.NotNull(client);
         this.client = client;
     }
 
@@ -56,12 +56,12 @@ public sealed class LlmMemoryExtractor : IMemoryExtractor
                 var lastFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
                 if (lastFence > firstNewline)
                 {
-                    trimmed = trimmed[(firstNewline + 1)..lastFence].Trim();
+                    trimmed = trimmed.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
                 }
             }
         }
         var start = trimmed.IndexOf('[');
         var end = trimmed.LastIndexOf(']');
-        return start >= 0 && end > start ? trimmed[start..(end + 1)] : trimmed;
+        return start >= 0 && end > start ? trimmed.Substring(start, end - start + 1) : trimmed;
     }
 }

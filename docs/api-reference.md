@@ -2,12 +2,11 @@
 
 ## Runtime requirements
 
-Mem0Sharp targets .NET 10 and the `Mem0Sharp` package has no runtime package
-dependencies. PostgreSQL and SQLite persistence are distributed separately as
-`Mem0Sharp.PostgreSQL` and `Mem0Sharp.SQLite`; install only the provider a
-deployment needs. The core service, in-memory store, deterministic local
-embeddings, and extension-point interfaces use only .NET 10 and the base class
-libraries.
+`Mem0Sharp`, `Mem0Sharp.PostgreSQL`, and `Mem0Sharp.SQLite` target .NET Standard
+2.0, .NET 8, .NET 9, and .NET 10. PostgreSQL and SQLite persistence are
+distributed separately; install only the provider a deployment needs. The
+PostgreSQL package uses the compatible Npgsql 7 line for .NET Standard 2.0 and
+Npgsql 9 for modern .NET targets.
 
 ## MemoryService
 

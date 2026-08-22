@@ -9,7 +9,7 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
 
     public LlmMemoryConflictResolver(IChatClient client)
     {
-        ArgumentNullException.ThrowIfNull(client);
+        Guard.NotNull(client);
         this.client = client;
     }
 
@@ -71,7 +71,7 @@ public sealed class LlmMemoryConflictResolver : IMemoryConflictResolver
         try
         {
             return JsonDocument.Parse(
-                response[start..(end + 1)],
+                response.Substring(start, end - start + 1),
                 new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         }
         catch (JsonException)
@@ -87,7 +87,7 @@ public sealed class LlmProceduralMemoryGenerator : IProceduralMemoryGenerator
 
     public LlmProceduralMemoryGenerator(IChatClient client)
     {
-        ArgumentNullException.ThrowIfNull(client);
+        Guard.NotNull(client);
         this.client = client;
     }
 

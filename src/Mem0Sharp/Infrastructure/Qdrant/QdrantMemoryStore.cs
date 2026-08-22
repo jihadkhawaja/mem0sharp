@@ -15,8 +15,8 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     public QdrantMemoryStore(HttpClient httpClient, QdrantMemoryStoreOptions options)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
-        ArgumentNullException.ThrowIfNull(options);
+        Guard.NotNull(httpClient);
+        Guard.NotNull(options);
         if (!options.Endpoint.IsAbsoluteUri) throw new ArgumentException("Qdrant endpoint must be absolute.", nameof(options));
         if (string.IsNullOrWhiteSpace(options.CollectionName)) throw new ArgumentException("CollectionName is required.", nameof(options));
         if (options.EmbeddingDimensions < 1) throw new ArgumentOutOfRangeException(nameof(options));
@@ -41,7 +41,7 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     public async Task SaveBatchAsync(IReadOnlyList<MemoryWriteRecord> records, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(records);
+        Guard.NotNull(records);
         if (records.Count == 0) return;
         foreach (var record in records)
         {
@@ -59,7 +59,7 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     public async Task<Memory?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        Guard.NotNullOrWhiteSpace(id);
         using var response = await SendAsync(HttpMethod.Get, $"{collectionPath}/points/{Uri.EscapeDataString(PointId(id))}?with_payload=true", null, cancellationToken, ensureSuccess: false);
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         if (!response.IsSuccessStatusCode) await ThrowRequestErrorAsync(response, cancellationToken);
@@ -114,7 +114,7 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     public async Task<IReadOnlyList<IReadOnlyList<SearchResult>>> SearchBatchAsync(IReadOnlyList<IReadOnlyList<float>> embeddings, MemoryFilter? filter = null, int topK = 5, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(embeddings);
+        Guard.NotNull(embeddings);
         foreach (var embedding in embeddings) ValidateEmbedding(embedding);
         if (topK < 0) throw new ArgumentOutOfRangeException(nameof(topK));
         if (embeddings.Count == 0 || topK == 0) return embeddings.Select(_ => (IReadOnlyList<SearchResult>)[]).ToArray();
@@ -163,7 +163,7 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     public async Task DeleteAsync(string id, MemoryHistoryEntry? history = null, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        Guard.NotNullOrWhiteSpace(id);
         await DeleteIdsAsync([id], cancellationToken);
     }
 
@@ -185,6 +185,12 @@ public sealed class QdrantMemoryStore : IMemoryStore
     public Task SaveHistoryAsync(MemoryHistoryEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<MemoryHistoryEntry>> GetHistoryAsync(string memoryId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>([]);
+
+    public Task<IReadOnlyList<MemoryHistoryEntry>> GetAllHistoryAsync(MemoryFilter? filter = null, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MemoryHistoryEntry>>([]);
+
+    public Task<RollbackResult> RollbackAsync(DateTimeOffset pointInTime, MemoryFilter? filter = null, CancellationToken cancellationToken = default) => Task.FromResult(new RollbackResult(0, 0, []));
+
+    public Task<RollbackResult> RollbackToHistoryAsync(string historyEntryId, CancellationToken cancellationToken = default) => Task.FromResult(new RollbackResult(0, 0, []));
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
     {
@@ -265,13 +271,13 @@ public sealed class QdrantMemoryStore : IMemoryStore
 
     private static async Task ThrowRequestErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        throw new HttpRequestException($"Qdrant request failed with {(int)response.StatusCode}: {body}", null, response.StatusCode);
+        var body = await Compatibility.ReadAsStringAsync(response.Content, cancellationToken);
+        throw Compatibility.CreateHttpRequestException($"Qdrant request failed with {(int)response.StatusCode}: {body}", response.StatusCode);
     }
 
     private void ValidateEmbedding(IReadOnlyList<float> embedding)
     {
-        ArgumentNullException.ThrowIfNull(embedding);
+        Guard.NotNull(embedding);
         if (embedding.Count != options.EmbeddingDimensions) throw new ArgumentException("Embedding dimensions do not match the Qdrant collection.", nameof(embedding));
     }
 

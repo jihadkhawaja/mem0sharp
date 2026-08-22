@@ -17,7 +17,7 @@ internal static class MemoryBehaviorPrompts
 
         return string.IsNullOrWhiteSpace(options.Prompt)
             ? instruction
-            : $"{instruction} Additional agent perspective or personality: {options.Prompt.Trim()}";
+            : $"{instruction} Additional agent perspective or personality: {options.Prompt!.Trim()}";
     }
 
     internal static string ForConflictResolution(string normalPrompt, MemoryAddOptions options) =>

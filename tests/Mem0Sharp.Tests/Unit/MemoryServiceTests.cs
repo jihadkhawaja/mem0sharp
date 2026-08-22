@@ -194,8 +194,8 @@ public sealed class MemoryServiceTests
     public async Task RawMessageAddBypassesExtractorAndPagingReturnsTotal()
     {
         var service = new MemoryService(extractor: new ThrowingExtractor());
-        await service.AddAsync([new Message("user", "first")], new MemoryAddOptions { UserId = "alice", Infer = false });
-        await service.AddAsync([new Message("user", "second")], new MemoryAddOptions { UserId = "alice", Infer = false });
+        await service.AddAsync(new[] { new Message("user", "first") }, new MemoryAddOptions { UserId = "alice", Infer = false });
+        await service.AddAsync(new[] { new Message("user", "second") }, new MemoryAddOptions { UserId = "alice", Infer = false });
 
         var page = await service.GetPageAsync(new MemoryPageOptions { Offset = 1, Limit = 1 }, new MemoryFilter(UserId: "alice"));
 
@@ -285,12 +285,12 @@ public sealed class MemoryServiceTests
         var id = (await service.AddAsync("old city", "alice")).Memories[0].Id;
         resolver.Decisions = [new MemoryDecision("new city", MemoryAction.Update, id)];
 
-        var update = await service.AddAsync([new Message("user", "I moved")], new MemoryAddOptions { UserId = "alice" });
+        var update = await service.AddAsync(new[] { new Message("user", "I moved") }, new MemoryAddOptions { UserId = "alice" });
         Assert.Equal(MemoryAction.Update, Assert.Single(update.Actions!).Event);
         Assert.Equal("new city", (await service.GetAsync(id))!.Text);
 
         resolver.Decisions = [new MemoryDecision(string.Empty, MemoryAction.Delete, id)];
-        var delete = await service.AddAsync([new Message("user", "Forget my city")], new MemoryAddOptions { UserId = "alice" });
+        var delete = await service.AddAsync(new[] { new Message("user", "Forget my city") }, new MemoryAddOptions { UserId = "alice" });
         Assert.Equal(MemoryAction.Delete, Assert.Single(delete.Actions!).Event);
         Assert.Null(await service.GetAsync(id));
     }
@@ -300,7 +300,7 @@ public sealed class MemoryServiceTests
     {
         var service = new MemoryService(proceduralMemoryGenerator: new StubProcedureGenerator());
 
-        var result = await service.AddAsync([new Message("assistant", "Use the deploy tool")], new MemoryAddOptions
+        var result = await service.AddAsync(new[] { new Message("assistant", "Use the deploy tool") }, new MemoryAddOptions
         {
             AgentId = "deploy-agent",
             MemoryType = "procedural_memory"

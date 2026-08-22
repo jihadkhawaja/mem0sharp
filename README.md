@@ -7,15 +7,15 @@
 [![NuGet version](https://img.shields.io/nuget/v/Mem0Sharp.svg)](https://www.nuget.org/packages/Mem0Sharp)
 [![NuGet downloads](https://img.shields.io/nuget/dt/Mem0Sharp.svg)](https://www.nuget.org/packages/Mem0Sharp)
 [![GitHub Release](https://img.shields.io/github/v/release/jihadkhawaja/mem0sharp?include_prereleases&label=release)](https://github.com/jihadkhawaja/mem0sharp/releases)
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![.NET](https://img.shields.io/badge/.NET-Standard%202.0%20%7C%208%20%7C%209%20%7C%2010-512BD4.svg)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**Long-term cognitive memory engine for AI applications and agents in .NET 10.**
+**Long-term cognitive memory engine for AI applications and agents in .NET.**
 
 Mem0Sharp is an independent, standalone C#/.NET implementation of the open-source [Mem0 project](https://github.com/mem0ai/mem0). It delivers a unified service API for saving, searching, updating, and consolidating semantic memories with modular embedding and vector storage providers.
 
 - 🔒 **100% Standalone & Local-First**: Runs entirely in-process in .NET with zero telemetry or third-party cloud service requirements.
-- 🪶 **Zero-Dependency Core**: Core runtime uses standard .NET 10 BCL. Persistence providers (PostgreSQL/pgvector, SQLite, Qdrant) are modular add-ons.
+- 🪶 **Broad Runtime Support**: NuGet packages target .NET Standard 2.0, .NET 8, .NET 9, and .NET 10. Persistence providers (PostgreSQL/pgvector, SQLite, Qdrant) are modular add-ons.
 - 🧠 **Cognitive Memory Behaviors**: Goes beyond raw vector storage with autonomous behaviors (dreaming/consolidation, spontaneous associations, and personality-shaped first-person recall).
 - 🔌 **Native Model Context Protocol (MCP)**: Includes 9 local MCP tools out of the box for agentic developer tools (Cursor, Claude Desktop, Copilot).
 
@@ -45,9 +45,9 @@ Console.WriteLine(results[0].Memory.Text); // I prefer C# over Python.
 
 | Feature / Capability | **Mem0Sharp** | Python Mem0 (OSS) | Hosted Mem0 SaaS | Raw Vector DBs | Ephemeral Chat Buffers |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Ecosystem & Runtime** | **Native .NET 10 / C#** | Python | Cloud API | Any Driver | Any Framework |
+| **Ecosystem & Runtime** | **.NET Standard 2.0 / .NET 8-10** | Python | Cloud API | Any Driver | Any Framework |
 | **Local-First & Offline** | **100% (No Telemetry)** | 100% | ❌ Cloud Only | 100% | 100% |
-| **Zero-Dependency Core** | **Yes (Pure .NET BCL)** | ❌ Multi-package | ❌ Client SDK | ❌ Heavy client | Yes |
+| **Local In-Process Core** | **Yes** | ❌ Multi-package | ❌ Client SDK | ❌ Heavy client | Yes |
 | **Cognitive Behaviors** *(Dreaming, Identity)* | **Built-in** | ❌ (Static) | ❌ (Static) | ❌ (Raw vectors) | ❌ |
 | **Model Context Protocol (MCP)** | **9 Built-in Tools** | Separate repo | ❌ Cloud only | ❌ | ❌ |
 | **Hybrid Search + Cross-Encoder Reranking** | **Built-in (BM25 + Dense)** | Basic | Proprietary | ❌ Manual setup | ❌ |

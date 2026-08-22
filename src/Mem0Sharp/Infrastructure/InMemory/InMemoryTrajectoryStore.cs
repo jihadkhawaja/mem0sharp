@@ -9,7 +9,7 @@ public sealed class InMemoryTrajectoryStore : ITrajectoryStore
 
     public Task AppendTrajectoryAsync(TrajectoryRecord record, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(record);
+        Guard.NotNull(record);
         cancellationToken.ThrowIfCancellationRequested();
         lock (sync)
         {
@@ -40,7 +40,7 @@ public sealed class InMemoryTrajectoryStore : ITrajectoryStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         trajectories.TryGetValue(id, out var record);
-        return Task.FromResult(record);
+        return Task.FromResult<TrajectoryRecord?>(record);
     }
 
     public Task ResetAsync(CancellationToken cancellationToken = default)
